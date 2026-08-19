@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Login - UI Automation Demo</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 360px; margin: 80px auto; }
+  h1 { font-size: 20px; }
+  label { display: block; margin-top: 12px; font-size: 14px; }
+  input[type="text"], input[type="password"] { width: 100%; padding: 6px; margin-top: 4px; box-sizing: border-box; }
+  button { margin-top: 16px; padding: 8px 16px; cursor: pointer; }
+  #login-error { color: #b00020; margin-top: 12px; min-height: 1.2em; }
+  .hint { color: #666; font-size: 12px; margin-top: 24px; }
+</style>
+</head>
+<body>
+  <h1>Login</h1>
+  <form id="login-form">
+    <label for="username">Username
+      <input type="text" id="username" autocomplete="username">
+    </label>
+    <label for="password">Password
+      <input type="password" id="password" autocomplete="current-password">
+    </label>
+    <button type="submit" id="login-btn">Log in</button>
+    <p id="login-error"></p>
+  </form>
+  <p class="hint">Demo credentials: demo / demo123</p>
+
+  <script>
+    const DEMO_USERNAME = 'demo';
+    const DEMO_PASSWORD = 'demo123';
+
+    const form = document.getElementById('login-form');
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+    const loginError = document.getElementById('login-error');
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const username = usernameInput.value.trim();
+      const password = passwordInput.value;
+
+      if (username === DEMO_USERNAME && password === DEMO_PASSWORD) {
+        localStorage.setItem('demo_auth_token', 'demo-session-token');
+        window.location.href = 'demo.html';
+        return;
+      }
+      loginError.textContent = 'Invalid username or password';
+    });
+  </script>
+</body>
+</html>

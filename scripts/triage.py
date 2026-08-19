@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Run the pytest suite against each buggy demo page in web/bugs/ and report
-which test(s) catch each injected defect.
+"""Run tests/test_demo.py against each buggy demo page in web/bugs/ and
+report which test(s) catch each injected defect. (test_login.py is skipped
+here since login behavior doesn't vary by --demo-html.)
 
 Usage:
     python scripts/triage.py [--write TRIAGE.md]
@@ -20,6 +21,7 @@ def run_against(html_path: Path) -> dict:
     subprocess.run(
         [
             sys.executable, "-m", "pytest",
+            "tests/test_demo.py",
             f"--demo-html={html_path}",
             f"--report-log={report_path}",
             "-q",

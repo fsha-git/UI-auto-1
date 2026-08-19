@@ -13,6 +13,9 @@ __pycache__/
 test-results/
 playwright-report/
 
+# Saved login session (regenerated each test run)
+.auth/
+
 # Claude Code
 .plan/
 .claude/settings.local.json

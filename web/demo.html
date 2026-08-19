@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <title>UI Automation Demo Page</title>
+<script>
+  // Auth gate: bounce to the login page if there's no session token.
+  if (!localStorage.getItem('demo_auth_token')) {
+    window.location.replace('login.html');
+  }
+</script>
 <style>
   body { font-family: Arial, sans-serif; max-width: 480px; margin: 40px auto; }
   h1 { font-size: 20px; }
@@ -14,6 +20,10 @@
 </head>
 <body>
   <h1>UI Automation Demo Page</h1>
+
+  <section>
+    <p>Logged in as <strong id="logged-in-user">demo</strong>. <button id="logout-btn">Logout</button></p>
+  </section>
 
   <section>
     <h2>To-Do List</h2>
@@ -38,6 +48,11 @@
   </section>
 
   <script>
+    document.getElementById('logout-btn').addEventListener('click', () => {
+      localStorage.removeItem('demo_auth_token');
+      window.location.href = 'login.html';
+    });
+
     const todoInput = document.getElementById('todo-input');
     const addBtn = document.getElementById('add-btn');
     const todoList = document.getElementById('todo-list');

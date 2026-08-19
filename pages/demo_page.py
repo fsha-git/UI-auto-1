@@ -11,6 +11,7 @@ class DemoPage:
         self.status_label = page.locator("#status-label")
         self.counter_btn = page.locator("#counter-btn")
         self.counter = page.locator("#counter")
+        self.logout_btn = page.locator("#logout-btn")
 
     def add_todo(self, text: str) -> None:
         self.todo_input.fill(text)
@@ -30,3 +31,6 @@ class DemoPage:
 
     def counter_value(self) -> int:
         return int(self.counter.text_content() or "0")
+
+    def logout(self) -> None:
+        self.logout_btn.click()

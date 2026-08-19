@@ -1,12 +1,21 @@
+import threading
+from functools import partial
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Page
+from playwright.sync_api import Browser, Page
 
 from pages.demo_page import DemoPage
+from pages.login_page import LoginPage
 
 PROJECT_ROOT = Path(__file__).parent.parent
-DEFAULT_DEMO_HTML_PATH = PROJECT_ROOT / "web" / "demo.html"
+WEB_DIR = PROJECT_ROOT / "web"
+DEFAULT_DEMO_HTML_PATH = WEB_DIR / "demo.html"
+AUTH_STATE_PATH = PROJECT_ROOT / ".auth" / "state.json"
+
+DEMO_USERNAME = "demo"
+DEMO_PASSWORD = "demo123"
 
 
 def pytest_addoption(parser):
@@ -19,8 +28,64 @@ def pytest_addoption(parser):
     )
 
 
+@pytest.fixture(scope="session")
+def demo_server():
+    """Serve web/ over local HTTP so cookies/localStorage have a real origin
+    (needed for storage_state-based auth reuse; file:// URLs don't support it)."""
+    handler = partial(SimpleHTTPRequestHandler, directory=str(WEB_DIR))
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    yield f"http://127.0.0.1:{httpd.server_port}"
+    httpd.shutdown()
+    thread.join()
+
+
 @pytest.fixture
-def demo_page(page: Page, request: pytest.FixtureRequest) -> DemoPage:
+def demo_url(demo_server: str, request: pytest.FixtureRequest) -> str:
     html_path = Path(request.config.getoption("--demo-html")).resolve()
-    page.goto(html_path.as_uri())
+    rel = html_path.relative_to(WEB_DIR)
+    return f"{demo_server}/{rel.as_posix()}"
+
+
+@pytest.fixture(scope="session")
+def storage_state_path(browser: Browser, demo_server: str) -> str:
+    """Log in once for the whole test session and persist the resulting
+    storage state (cookies/localStorage) so individual tests can reuse it
+    instead of logging in themselves."""
+    AUTH_STATE_PATH.parent.mkdir(exist_ok=True)
+    context = browser.new_context()
+    page = context.new_page()
+    page.goto(f"{demo_server}/login.html")
+    LoginPage(page).login(DEMO_USERNAME, DEMO_PASSWORD)
+    page.wait_for_url(f"{demo_server}/demo.html")
+    context.storage_state(path=str(AUTH_STATE_PATH))
+    context.close()
+    return str(AUTH_STATE_PATH)
+
+
+@pytest.fixture(scope="session")
+def browser_context_args(browser_context_args, storage_state_path: str):
+    return {**browser_context_args, "storage_state": storage_state_path}
+
+
+@pytest.fixture
+def demo_page(page: Page, demo_url: str) -> DemoPage:
+    page.goto(demo_url)
     return DemoPage(page)
+
+
+@pytest.fixture
+def fresh_page(browser: Browser):
+    """A page in a brand-new, unauthenticated context — for exercising the
+    login flow itself, bypassing the shared logged-in storage state."""
+    context = browser.new_context()
+    page = context.new_page()
+    yield page
+    context.close()
+
+
+@pytest.fixture
+def login_page(fresh_page: Page, demo_server: str) -> LoginPage:
+    fresh_page.goto(f"{demo_server}/login.html")
+    return LoginPage(fresh_page)
