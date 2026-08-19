@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+.venv/
+
+# Pytest
+.pytest_cache/
+.triage-report-*.json
+
+# Playwright
+test-results/
+playwright-report/
+
+# Claude Code
+.plan/
+.claude/settings.local.json
+
+# OS
+.DS_Store

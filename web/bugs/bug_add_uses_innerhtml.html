@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>UI Automation Demo Page</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 480px; margin: 40px auto; }
+  h1 { font-size: 20px; }
+  section { margin-bottom: 24px; padding: 12px; border: 1px solid #ddd; border-radius: 6px; }
+  input[type="text"] { padding: 6px; }
+  button { padding: 6px 12px; margin-left: 6px; cursor: pointer; }
+  #todo-list li { padding: 2px 0; }
+</style>
+</head>
+<body>
+  <h1>UI Automation Demo Page</h1>
+
+  <section>
+    <h2>To-Do List</h2>
+    <input type="text" id="todo-input" placeholder="Enter a task">
+    <button id="add-btn">Add</button>
+    <ul id="todo-list"></ul>
+  </section>
+
+  <section>
+    <h2>Status Toggle</h2>
+    <label>
+      <input type="checkbox" id="status-checkbox">
+      Enable feature
+    </label>
+    <p id="status-label">Status: OFF</p>
+  </section>
+
+  <section>
+    <h2>Counter</h2>
+    <button id="counter-btn">Click me</button>
+    <span id="counter">0</span>
+  </section>
+
+  <script>
+    const todoInput = document.getElementById('todo-input');
+    const addBtn = document.getElementById('add-btn');
+    const todoList = document.getElementById('todo-list');
+
+    addBtn.addEventListener('click', () => {
+      const text = todoInput.value.trim();
+      if (!text) return;
+      const li = document.createElement('li');
+      // BUG: innerHTML instead of textContent, so markup in the input is parsed as HTML
+      li.innerHTML = text;
+      todoList.appendChild(li);
+      todoInput.value = '';
+    });
+
+    const statusCheckbox = document.getElementById('status-checkbox');
+    const statusLabel = document.getElementById('status-label');
+
+    statusCheckbox.addEventListener('change', () => {
+      statusLabel.textContent = `Status: ${statusCheckbox.checked ? 'ON' : 'OFF'}`;
+    });
+
+    const counterBtn = document.getElementById('counter-btn');
+    const counter = document.getElementById('counter');
+    let count = 0;
+
+    counterBtn.addEventListener('click', () => {
+      count += 1;
+      counter.textContent = String(count);
+    });
+  </script>
+</body>
+</html>
