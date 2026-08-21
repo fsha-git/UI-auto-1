@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>UI Automation Demo Dashboard</title>
+<script>
+  if (!localStorage.getItem('demo_auth_token')) {
+    window.location.replace('login.html');
+  }
+</script>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 480px; margin: 40px auto; }
+  h1 { font-size: 20px; }
+  section { margin-bottom: 24px; padding: 12px; border: 1px solid #ddd; border-radius: 6px; }
+  button { padding: 6px 12px; margin-left: 6px; cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #eee; }
+  #chart { width: 100%; height: 160px; }
+  .bar { fill: #4a7dfc; }
+  #error-message { color: #b00020; }
+  #empty-message, #loading { color: #666; }
+  #total-value { font-weight: bold; }
+</style>
+</head>
+<body>
+  <h1>Mock Data Dashboard</h1>
+
+  <section>
+    <p>
+      Logged in as <strong id="logged-in-user">demo</strong>.
+      <button id="logout-btn">Logout</button>
+      <a href="demo.html">Back to demo</a>
+    </p>
+  </section>
+
+  <section>
+    <h2>Weekly Stats</h2>
+    <p id="loading">Loading...</p>
+    <p id="error-message" style="display: none;"></p>
+    <p id="empty-message" style="display: none;">No data available</p>
+
+    <div id="chart-container" style="display: none;">
+      <svg id="chart" viewBox="0 0 300 160" preserveAspectRatio="none"></svg>
+      <table id="stats-table">
+        <thead><tr><th>Label</th><th>Value</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p>Total: <span id="total-value"></span></p>
+    </div>
+
+    <button id="refresh-btn">Refresh</button>
+  </section>
+
+  <script>
+    document.getElementById('logout-btn').addEventListener('click', () => {
+      localStorage.removeItem('demo_auth_token');
+      window.location.href = 'login.html';
+    });
+
+    const loading = document.getElementById('loading');
+    const errorMessage = document.getElementById('error-message');
+    const emptyMessage = document.getElementById('empty-message');
+    const chartContainer = document.getElementById('chart-container');
+    const chartSvg = document.getElementById('chart');
+    const tableBody = document.querySelector('#stats-table tbody');
+    const totalValue = document.getElementById('total-value');
+    const refreshBtn = document.getElementById('refresh-btn');
+
+    function setState(state) {
+      loading.style.display = state === 'loading' ? 'block' : 'none';
+      errorMessage.style.display = state === 'error' ? 'block' : 'none';
+      emptyMessage.style.display = state === 'empty' ? 'block' : 'none';
+      chartContainer.style.display = state === 'data' ? 'block' : 'none';
+    }
+
+    function renderChart(labels, values) {
+      chartSvg.innerHTML = '';
+      const max = Math.max(...values, 1);
+      const barWidth = 300 / values.length;
+      values.forEach((value, i) => {
+        const height = (value / max) * 140;
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('class', 'bar');
+        rect.setAttribute('data-label', labels[i]);
+        rect.setAttribute('data-value', String(value));
+        rect.setAttribute('x', String(i * barWidth + 4));
+        rect.setAttribute('y', String(140 - height));
+        rect.setAttribute('width', String(barWidth - 8));
+        rect.setAttribute('height', String(height));
+        chartSvg.appendChild(rect);
+      });
+    }
+
+    function renderTable(labels, values) {
+      tableBody.innerHTML = '';
+      labels.forEach((label, i) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `<td>${label}</td><td>${values[i]}</td>`;
+        tableBody.appendChild(row);
+      });
+    }
+
+    async function loadStats() {
+      setState('loading');
+      try {
+        const response = await fetch('/api/stats');
+        if (!response.ok) {
+          setState('error');
+          errorMessage.textContent = `Failed to load stats (status ${response.status})`;
+          return;
+        }
+        const data = await response.json();
+        const labels = data.labels || [];
+        const values = data.values || [];
+        if (values.length === 0) {
+          setState('empty');
+          return;
+        }
+        renderChart(labels, values);
+        renderTable(labels, values);
+        totalValue.textContent = String(values.reduce((sum, v) => sum + v, 0));
+        setState('data');
+      } catch (err) {
+        setState('error');
+        errorMessage.textContent = 'Failed to load stats (network error)';
+      }
+    }
+
+    refreshBtn.addEventListener('click', loadStats);
+    loadStats();
+  </script>
+</body>
+</html>

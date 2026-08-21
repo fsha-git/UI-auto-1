@@ -1,3 +1,4 @@
+import json
 import threading
 from functools import partial
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
@@ -17,6 +18,22 @@ AUTH_STATE_PATH = PROJECT_ROOT / ".auth" / "state.json"
 DEMO_USERNAME = "demo"
 DEMO_PASSWORD = "demo123"
 
+# Canned response for the dashboard's default (unmocked) data source.
+STATS_API_RESPONSE = {"labels": ["Mon", "Tue", "Wed", "Thu", "Fri"], "values": [12, 19, 3, 5, 2]}
+
+
+class DemoRequestHandler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/api/stats":
+            body = json.dumps(STATS_API_RESPONSE).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        super().do_GET()
+
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -32,7 +49,7 @@ def pytest_addoption(parser):
 def demo_server():
     """Serve web/ over local HTTP so cookies/localStorage have a real origin
     (needed for storage_state-based auth reuse; file:// URLs don't support it)."""
-    handler = partial(SimpleHTTPRequestHandler, directory=str(WEB_DIR))
+    handler = partial(DemoRequestHandler, directory=str(WEB_DIR))
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -73,6 +90,11 @@ def browser_context_args(browser_context_args, storage_state_path: str):
 def demo_page(page: Page, demo_url: str) -> DemoPage:
     page.goto(demo_url)
     return DemoPage(page)
+
+
+@pytest.fixture
+def dashboard_url(demo_server: str) -> str:
+    return f"{demo_server}/dashboard.html"
 
 
 @pytest.fixture
