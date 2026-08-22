@@ -23,6 +23,8 @@ Tests that need to exercise the login flow (or an unauthenticated state) use the
 
 `tests/test_dashboard.py` shows the other side of that: tests call `page.route("**/api/stats", ...)` *before* navigating to intercept the request and substitute controlled data, which is how the empty-state, error-state, and multi-response refresh scenarios are exercised without needing a real backend to produce those conditions on demand.
 
+See [`MOCK_TESTS.md`](MOCK_TESTS.md) (Chinese) for a scenario-by-scenario breakdown of every mock test in `test_dashboard.py`.
+
 ## Setup
 ```bash
 cd /Users/shafelix/mywork2/UI_auto_1
