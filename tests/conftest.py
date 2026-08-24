@@ -7,12 +7,10 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Browser, Page
 
+from conftest import PROJECT_ROOT, WEB_DIR
 from pages.demo_page import DemoPage
 from pages.login_page import LoginPage
 
-PROJECT_ROOT = Path(__file__).parent.parent
-WEB_DIR = PROJECT_ROOT / "web"
-DEFAULT_DEMO_HTML_PATH = WEB_DIR / "demo.html"
 AUTH_STATE_PATH = PROJECT_ROOT / ".auth" / "state.json"
 
 DEMO_USERNAME = "demo"
@@ -33,16 +31,6 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
             return
         super().do_GET()
-
-
-def pytest_addoption(parser):
-    parser.addoption(
-        "--demo-html",
-        action="store",
-        default=str(DEFAULT_DEMO_HTML_PATH),
-        help="Path to the demo HTML file to run the suite against "
-        "(defaults to web/demo.html; use to point at a web/bugs/*.html mutant).",
-    )
 
 
 @pytest.fixture(scope="session")

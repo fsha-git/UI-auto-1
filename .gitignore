@@ -12,6 +12,7 @@ __pycache__/
 # Playwright
 test-results/
 playwright-report/
+reports/
 
 # Saved login session (regenerated each test run)
 .auth/
