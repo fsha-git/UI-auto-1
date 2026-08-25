@@ -7,9 +7,11 @@ Minimal UI automation framework with a local demo page as the test target.
 - `web/demo.html` — main demo page (to-do list, checkbox, counter), gated behind login
 - `web/dashboard.html` — mock-data visualization page (bar chart + table + total), gated behind login; fetches `GET /api/stats`
 - `web/bugs/` — mutated copies of `demo.html`, each with one injected defect, used for test triage
+- `server/app.py` — demo backend (static files + `/api/*` JSON endpoints: login, stats, todos CRUD), mounted in-process by the test server fixture
 - `pages/login_page.py`, `pages/demo_page.py`, `pages/dashboard_page.py` — Page Objects
-- `tests/` — pytest tests using `pytest-playwright` fixtures
+- `tests/` — pytest tests using `pytest-playwright` fixtures; `tests/test_api.py` are pure API tests via Playwright's `APIRequestContext` (no browser)
 - `scripts/triage.py` — runs `tests/test_demo.py` against every `web/bugs/*.html` and reports which test(s) catch each bug
+- `scripts/js_coverage.py` — CDP-based V8 precise-coverage collector + colored HTML report generator for the inline JS in `web/*.html`
 
 ## Auth: login once, reuse across all tests
 The pages are served over local HTTP (via a session-scoped `demo_server` fixture in `tests/conftest.py`, since cookies/localStorage need a real origin — `file://` URLs don't support this reliably).
@@ -42,3 +44,11 @@ Run headed (visible browser) to watch the interactions:
 ```bash
 pytest --headed
 ```
+
+## Coverage ("code staining")
+Every `pytest` run instruments both sides of the stack and writes two visual HTML reports:
+
+- **Python** (backend `server/` + Page Objects `pages/`) via pytest-cov → terminal summary plus `reports/coverage-py/index.html`
+- **Front-end inline JS** in `web/*.html` via CDP / V8 precise coverage, collected during the UI tests and merged across the session → `reports/coverage-js/index.html` (green = executed, red = never executed)
+
+See [`COVERAGE.md`](COVERAGE.md) (Chinese) for how the API tests and both coverage pipelines work.

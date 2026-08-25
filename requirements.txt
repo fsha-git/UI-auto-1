@@ -3,3 +3,4 @@ pytest-playwright
 pytest-reportlog
 pytest-timeout
 pytest-html
+pytest-cov

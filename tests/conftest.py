@@ -1,43 +1,28 @@
-import json
 import threading
 from functools import partial
-from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Browser, Page
+from playwright.sync_api import Browser, Page, Playwright
 
 from conftest import PROJECT_ROOT, WEB_DIR
 from pages.demo_page import DemoPage
 from pages.login_page import LoginPage
+from scripts.js_coverage import JsCoverageCollector
+from server.app import DEMO_PASSWORD, DEMO_USERNAME, DemoApiHandler
 
 AUTH_STATE_PATH = PROJECT_ROOT / ".auth" / "state.json"
-
-DEMO_USERNAME = "demo"
-DEMO_PASSWORD = "demo123"
-
-# Canned response for the dashboard's default (unmocked) data source.
-STATS_API_RESPONSE = {"labels": ["Mon", "Tue", "Wed", "Thu", "Fri"], "values": [12, 19, 3, 5, 2]}
-
-
-class DemoRequestHandler(SimpleHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/api/stats":
-            body = json.dumps(STATS_API_RESPONSE).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            return
-        super().do_GET()
+JS_COVERAGE_REPORT_DIR = PROJECT_ROOT / "reports" / "coverage-js"
 
 
 @pytest.fixture(scope="session")
 def demo_server():
     """Serve web/ over local HTTP so cookies/localStorage have a real origin
-    (needed for storage_state-based auth reuse; file:// URLs don't support it)."""
-    handler = partial(DemoRequestHandler, directory=str(WEB_DIR))
+    (needed for storage_state-based auth reuse; file:// URLs don't support it).
+    The handler comes from server/app.py: static files plus the /api/* JSON
+    endpoints, running in-process so pytest-cov sees its code execute."""
+    handler = partial(DemoApiHandler, directory=str(WEB_DIR))
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -99,3 +84,39 @@ def fresh_page(browser: Browser):
 def login_page(fresh_page: Page, demo_server: str) -> LoginPage:
     fresh_page.goto(f"{demo_server}/login.html")
     return LoginPage(fresh_page)
+
+
+@pytest.fixture(scope="session")
+def api_request_context(playwright: Playwright, demo_server: str):
+    """Browserless HTTP client for pure API tests (tests/test_api.py)."""
+    context = playwright.request.new_context(base_url=demo_server)
+    yield context
+    context.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Front-end JS coverage ("code staining"): collect V8 precise coverage over
+# each page used by a test, merge across the session, and write a colored
+# HTML report at session end. See scripts/js_coverage.py.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def js_coverage_collector(demo_server: str):
+    collector = JsCoverageCollector(server_url=demo_server, web_dir=WEB_DIR)
+    yield collector
+    report_path = collector.write_report(JS_COVERAGE_REPORT_DIR)
+    if report_path is not None:
+        print(f"\nJS coverage report: {report_path}")
+
+
+@pytest.fixture(autouse=True)
+def js_coverage(request: pytest.FixtureRequest, js_coverage_collector: JsCoverageCollector):
+    """Instrument every Playwright page a test uses. No-op for API tests."""
+    sessions = []
+    for fixture_name in ("page", "fresh_page"):
+        if fixture_name in request.fixturenames:
+            page = request.getfixturevalue(fixture_name)
+            sessions.append(js_coverage_collector.start(page))
+    yield
+    for session in sessions:
+        js_coverage_collector.collect(session)
