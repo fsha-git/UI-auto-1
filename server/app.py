@@ -186,3 +186,8 @@ class DemoApiHandler(SimpleHTTPRequestHandler):
                 self._send_json(*handle_delete_todo(todo_id_raw))
         else:
             self._send_json(404, {"error": "not found"})
+
+    # a fake functin won't be called by front
+    def fake_function(self):
+        # pyrefly: ignore [division-by-zero]
+        return 1/0
