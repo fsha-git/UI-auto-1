@@ -15,6 +15,10 @@ test-results/
 playwright-report/
 reports/
 
+# JMeter
+*.jtl
+jmeter.log
+
 # Saved login session (regenerated each test run)
 .auth/
 
@@ -24,3 +28,4 @@ reports/
 
 # OS
 .DS_Store
+my_*.md
