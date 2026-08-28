@@ -78,6 +78,17 @@ perf/run_perf.sh concurrency -Jthreads=100 -Jrendezvous=100 -Jloops=20
 .venv/bin/python perf/check_jtl.py reports/jmeter/performance/results.jtl --max-error-rate 1 --max-p95 800
 ```
 
+### 趋势看板（跨运行对比）
+
+单次报告会被下一次运行覆盖，跨运行数据由两个追加式产物保留：
+
+- `reports/jmeter/history.jsonl` — 每次运行（含失败）由 `perf/record_run.py` 追加一行：时间戳、场景、**实际生效参数**（JMX 默认值叠加 `-J` 覆盖）、阈值、`check_jtl.py` 全部指标、`statistics.json` 的每请求统计、通过/失败。存放路径可用 `PERF_HISTORY` 环境变量覆盖；删除 `reports/` 即清空历史。
+- `reports/jmeter/perf_dashboard.html` — **性能趋势看板**，每次 `run_perf.sh` 结束时由 `perf/make_dashboard.py` 自动重新生成（也可单独跑）。自包含 HTML，浏览器直接打开（file:// 即可）：每场景最新结果摘要卡、吞吐量 / p95+p99 延迟 / 错误率三条趋势图（悬浮数据点可看该次参数，失败运行为红色空心点，指标缺失为 ×）、历次运行明细（参数、阈值、每请求统计，最新一次可跳转 JMeter 完整报告）。
+
+```bash
+.venv/bin/python perf/make_dashboard.py   # 默认读写 reports/jmeter/ 下的 history.jsonl 与 perf_dashboard.html
+```
+
 ## 基线快照（2026-08-26，Apple Silicon 本机回环）
 
 | 场景 | 样本数 | 错误率 | p50 / p95 / p99 (ms) | 吞吐量 |

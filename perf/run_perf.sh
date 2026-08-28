@@ -4,6 +4,8 @@
 #   -v  跟踪模式：打印每条执行的命令（set -x），便于排查脚本本身的问题。
 # 每类测试启动全新 server 进程（保证 todo_store 干净），跑完生成 HTML dashboard
 # 并用 perf/check_jtl.py 做阈值校验；任一类失败则最终退出码非零。
+# 每次运行追加一行历史到 $PERF_HISTORY（默认 reports/jmeter/history.jsonl），
+# 结束时由 perf/make_dashboard.py 生成跨运行趋势看板 reports/jmeter/perf_dashboard.html。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -28,6 +30,7 @@ fi
 PY=.venv/bin/python
 [ -x "$PY" ] || PY=python3
 PORT="${PERF_PORT:-8000}"
+HISTORY="${PERF_HISTORY:-reports/jmeter/history.jsonl}"
 
 if lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
     echo "Port $PORT is already in use; set PERF_PORT to use another port." >&2
@@ -80,13 +83,23 @@ for TYPE in "${TYPES[@]}"; do
 
     CHECK_RC=0
     # shellcheck disable=SC2046
-    "$PY" perf/check_jtl.py "$OUT/results.jtl" $(thresholds_for "$TYPE") || CHECK_RC=$?
+    "$PY" perf/check_jtl.py "$OUT/results.jtl" --json "$OUT/check.json" $(thresholds_for "$TYPE") || CHECK_RC=$?
     if [ "$JM_RC" -ne 0 ] || [ "$CHECK_RC" -ne 0 ]; then
         FAILED+=("$TYPE")
     fi
+
+    # 无条件记录（失败的运行也进历史，趋势图上显示为红点）
+    "$PY" perf/record_run.py --type "$TYPE" --out-dir "$OUT" --history "$HISTORY" \
+        --jmeter-rc "$JM_RC" --check-rc "$CHECK_RC" -- "$@" \
+        || echo "warn: record_run failed for $TYPE" >&2
     echo "Dashboard: $OUT/dashboard/index.html"
     echo
 done
+
+# 失败的运行也要刷新趋势看板
+"$PY" perf/make_dashboard.py --history "$HISTORY" --out reports/jmeter/perf_dashboard.html \
+    || echo "warn: dashboard generation failed" >&2
+echo "Perf trend dashboard: reports/jmeter/perf_dashboard.html"
 
 if [ "${#FAILED[@]}" -gt 0 ]; then
     echo "FAILED: ${FAILED[*]}" >&2
