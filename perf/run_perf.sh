@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # JMeter 压测一键运行脚本。
-# 用法: perf/run_perf.sh [performance|stress|concurrency|all] [额外 -J 参数透传给 jmeter]
+# 用法: perf/run_perf.sh [-v] [performance|stress|concurrency|all] [额外 -J 参数透传给 jmeter]
+#   -v  跟踪模式：打印每条执行的命令（set -x），便于排查脚本本身的问题。
 # 每类测试启动全新 server 进程（保证 todo_store 干净），跑完生成 HTML dashboard
 # 并用 perf/check_jtl.py 做阈值校验；任一类失败则最终退出码非零。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+if [ "${1:-}" = "-v" ]; then
+    shift
+    PS4='+ [${BASH_SOURCE##*/}:${LINENO}] '
+    set -x
+fi
 
 TARGET="${1:-all}"
 shift || true
