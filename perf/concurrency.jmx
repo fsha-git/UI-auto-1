@@ -40,6 +40,21 @@
         <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
       </ThreadGroup>
       <hashTree>
+        <Arguments guiclass="ArgumentsPanel" testclass="Arguments" testname="Dedicated Concurrency Account">
+          <collectionProp name="Arguments.arguments">
+            <elementProp name="username" elementType="Argument">
+              <stringProp name="Argument.name">username</stringProp>
+              <stringProp name="Argument.value">${__P(account,perfuser01)}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="password" elementType="Argument">
+              <stringProp name="Argument.name">password</stringProp>
+              <stringProp name="Argument.value">${__P(account_password,perfpass01)}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+          </collectionProp>
+        </Arguments>
+        <hashTree/>
         <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Authorization Header">
           <collectionProp name="HeaderManager.headers">
             <elementProp name="" elementType="Header">
@@ -57,7 +72,7 @@
               <collectionProp name="Arguments.arguments">
                 <elementProp name="" elementType="HTTPArgument">
                   <boolProp name="HTTPArgument.always_encode">false</boolProp>
-                  <stringProp name="Argument.value">{"username":"demo","password":"demo123"}</stringProp>
+                  <stringProp name="Argument.value">{"username":"${username}","password":"${password}"}</stringProp>
                   <stringProp name="Argument.metadata">=</stringProp>
                 </elementProp>
               </collectionProp>
@@ -169,6 +184,21 @@
         <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
       </PostThreadGroup>
       <hashTree>
+        <Arguments guiclass="ArgumentsPanel" testclass="Arguments" testname="Dedicated Concurrency Account">
+          <collectionProp name="Arguments.arguments">
+            <elementProp name="username" elementType="Argument">
+              <stringProp name="Argument.name">username</stringProp>
+              <stringProp name="Argument.value">${__P(account,perfuser01)}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="password" elementType="Argument">
+              <stringProp name="Argument.name">password</stringProp>
+              <stringProp name="Argument.value">${__P(account_password,perfpass01)}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+          </collectionProp>
+        </Arguments>
+        <hashTree/>
         <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Authorization Header">
           <collectionProp name="HeaderManager.headers">
             <elementProp name="" elementType="Header">
@@ -184,7 +214,7 @@
             <collectionProp name="Arguments.arguments">
               <elementProp name="" elementType="HTTPArgument">
                 <boolProp name="HTTPArgument.always_encode">false</boolProp>
-                <stringProp name="Argument.value">{"username":"demo","password":"demo123"}</stringProp>
+                <stringProp name="Argument.value">{"username":"${username}","password":"${password}"}</stringProp>
                 <stringProp name="Argument.metadata">=</stringProp>
               </elementProp>
             </collectionProp>

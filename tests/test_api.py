@@ -3,10 +3,21 @@ APIRequestContext — no browser involved. The server runs in-process (see the
 demo_server fixture), so these tests also drive the Python coverage numbers
 for server/app.py."""
 
+from pathlib import Path
+
 import pytest
 from playwright.sync_api import APIRequestContext
 
-from server.app import DEMO_TOKEN, MAX_TODO_TEXT_LENGTH, todo_store
+from server.app import (
+    ACCOUNTS,
+    DEMO_USERNAME,
+    DEMO_TOKEN,
+    MAX_TODO_TEXT_LENGTH,
+    issue_token,
+    load_accounts,
+    register_account,
+    todo_store,
+)
 
 AUTH_HEADERS = {"Authorization": f"Bearer {DEMO_TOKEN}"}
 
@@ -177,3 +188,103 @@ def test_delete_with_non_integer_id_returns_400(api_request_context: APIRequestC
 def test_delete_on_non_todo_path_returns_404(api_request_context: APIRequestContext):
     response = api_request_context.delete("/api/stats", headers=AUTH_HEADERS)
     assert response.status == 404
+
+
+# -- multi-account data isolation -------------------------------------------
+# The load tests run under their own accounts (perf/accounts.csv) rather than
+# sharing `demo`. These tests are what make that separation worth having:
+# they pin the per-account partitioning that the sharing used to hide.
+
+OTHER_USERNAME = "other-user"
+OTHER_PASSWORD = "other-pass"
+
+
+@pytest.fixture
+def other_account():
+    """A second registered account, torn down after the test."""
+    register_account(OTHER_USERNAME, OTHER_PASSWORD)
+    yield {"Authorization": f"Bearer {issue_token(OTHER_USERNAME)}"}
+    ACCOUNTS.pop(OTHER_USERNAME, None)
+
+
+def test_each_account_logs_in_to_its_own_token(api_request_context: APIRequestContext, other_account):
+    response = api_request_context.post(
+        "/api/login", data={"username": OTHER_USERNAME, "password": OTHER_PASSWORD}
+    )
+    assert response.status == 200
+    assert response.json()["token"] == issue_token(OTHER_USERNAME)
+    assert response.json()["token"] != DEMO_TOKEN
+
+
+def test_token_of_an_unregistered_account_is_rejected(api_request_context: APIRequestContext):
+    response = api_request_context.get(
+        "/api/todos", headers={"Authorization": f"Bearer {issue_token('ghost')}"}
+    )
+    assert response.status == 401
+
+
+def test_todos_are_not_visible_across_accounts(api_request_context: APIRequestContext, other_account):
+    api_request_context.post("/api/todos", data={"text": "demo's todo"}, headers=AUTH_HEADERS)
+
+    listed = api_request_context.get("/api/todos", headers=other_account)
+    assert listed.status == 200
+    assert listed.json() == {"todos": []}
+
+
+def test_account_cannot_delete_another_accounts_todo(
+    api_request_context: APIRequestContext, other_account
+):
+    todo = api_request_context.post(
+        "/api/todos", data={"text": "not yours"}, headers=AUTH_HEADERS
+    ).json()
+
+    # A cross-account delete must not silently succeed.
+    forbidden = api_request_context.delete(f"/api/todos/{todo['id']}", headers=other_account)
+    assert forbidden.status == 404
+
+    still_there = api_request_context.get("/api/todos", headers=AUTH_HEADERS)
+    assert still_there.json()["todos"] == [todo]
+
+
+def test_todo_ids_stay_unique_across_accounts(api_request_context: APIRequestContext, other_account):
+    # Ids come from one global counter, so perf/concurrency.jmx can still
+    # detect a duplicate id handed to two threads.
+    mine = api_request_context.post("/api/todos", data={"text": "a"}, headers=AUTH_HEADERS).json()
+    theirs = api_request_context.post("/api/todos", data={"text": "b"}, headers=other_account).json()
+    assert mine["id"] != theirs["id"]
+    assert mine["owner"] != theirs["owner"]
+
+
+# -- account registration ---------------------------------------------------
+
+def test_load_accounts_registers_csv_rows_and_skips_the_header(tmp_path):
+    csv_path = tmp_path / "accounts.csv"
+    csv_path.write_text("username,password\nloaded1,pw1\nloaded2,pw2\n")
+    try:
+        assert load_accounts(csv_path) == 2
+        assert ACCOUNTS["loaded1"] == "pw1"
+        assert ACCOUNTS["loaded2"] == "pw2"
+        # the built-in demo account is added to, never replaced
+        assert DEMO_USERNAME in ACCOUNTS
+    finally:
+        ACCOUNTS.pop("loaded1", None)
+        ACCOUNTS.pop("loaded2", None)
+
+
+def test_load_accounts_ignores_blank_and_short_rows(tmp_path):
+    csv_path = tmp_path / "accounts.csv"
+    csv_path.write_text("username,password\n\nincomplete\ngood,pw\n")
+    try:
+        assert load_accounts(csv_path) == 1
+        assert ACCOUNTS["good"] == "pw"
+    finally:
+        ACCOUNTS.pop("good", None)
+
+
+def test_ships_with_dedicated_load_test_accounts():
+    """perf/accounts.csv is what keeps the load tests off the demo account."""
+    accounts_csv = Path(__file__).resolve().parent.parent / "perf" / "accounts.csv"
+    assert accounts_csv.exists(), "perf/accounts.csv is required by perf/run_perf.sh"
+    rows = [line for line in accounts_csv.read_text().splitlines()[1:] if line.strip()]
+    assert len(rows) >= 50
+    assert all(not row.startswith(f"{DEMO_USERNAME},") for row in rows)

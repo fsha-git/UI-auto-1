@@ -42,6 +42,18 @@
         <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
       </ThreadGroup>
       <hashTree>
+        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="Perf Accounts">
+          <stringProp name="filename">${__P(accounts,perf/accounts.csv)}</stringProp>
+          <stringProp name="fileEncoding">UTF-8</stringProp>
+          <stringProp name="variableNames"></stringProp>
+          <boolProp name="ignoreFirstLine">true</boolProp>
+          <stringProp name="delimiter">,</stringProp>
+          <boolProp name="quotedData">false</boolProp>
+          <boolProp name="recycle">true</boolProp>
+          <boolProp name="stopThread">false</boolProp>
+          <stringProp name="shareMode">shareMode.all</stringProp>
+        </CSVDataSet>
+        <hashTree/>
         <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Authorization Header">
           <collectionProp name="HeaderManager.headers">
             <elementProp name="" elementType="Header">
@@ -64,7 +76,7 @@
               <collectionProp name="Arguments.arguments">
                 <elementProp name="" elementType="HTTPArgument">
                   <boolProp name="HTTPArgument.always_encode">false</boolProp>
-                  <stringProp name="Argument.value">{"username":"demo","password":"demo123"}</stringProp>
+                  <stringProp name="Argument.value">{"username":"${username}","password":"${password}"}</stringProp>
                   <stringProp name="Argument.metadata">=</stringProp>
                 </elementProp>
               </collectionProp>
