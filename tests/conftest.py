@@ -7,6 +7,7 @@ import pytest
 from playwright.sync_api import Browser, Page, Playwright
 
 from conftest import PROJECT_ROOT, WEB_DIR
+from pages.dashboard_page import DashboardPage
 from pages.demo_page import DemoPage
 from pages.login_page import LoginPage
 from scripts.js_coverage import JsCoverageCollector
@@ -46,8 +47,7 @@ def storage_state_path(browser: Browser, demo_server: str) -> str:
     AUTH_STATE_PATH.parent.mkdir(exist_ok=True)
     context = browser.new_context()
     page = context.new_page()
-    page.goto(f"{demo_server}/login.html")
-    LoginPage(page).login(DEMO_USERNAME, DEMO_PASSWORD)
+    LoginPage(page, demo_server).open().login(DEMO_USERNAME, DEMO_PASSWORD)
     page.wait_for_url(f"{demo_server}/demo.html")
     context.storage_state(path=str(AUTH_STATE_PATH))
     context.close()
@@ -60,14 +60,17 @@ def browser_context_args(browser_context_args, storage_state_path: str):
 
 
 @pytest.fixture
-def demo_page(page: Page, demo_url: str) -> DemoPage:
-    page.goto(demo_url)
-    return DemoPage(page)
+def demo_page(page: Page, demo_server: str, demo_url: str) -> DemoPage:
+    # demo_url is passed explicitly because --demo-html can point the suite at
+    # a web/bugs/*.html mutant instead of demo.html.
+    return DemoPage(page, demo_server).open(demo_url)
 
 
 @pytest.fixture
-def dashboard_url(demo_server: str) -> str:
-    return f"{demo_server}/dashboard.html"
+def dashboard(page: Page, demo_server: str) -> DashboardPage:
+    """An un-navigated dashboard page object. Tests call ``.open()`` themselves
+    so they can install page.route() interception *before* navigating."""
+    return DashboardPage(page, demo_server)
 
 
 @pytest.fixture
@@ -82,8 +85,7 @@ def fresh_page(browser: Browser):
 
 @pytest.fixture
 def login_page(fresh_page: Page, demo_server: str) -> LoginPage:
-    fresh_page.goto(f"{demo_server}/login.html")
-    return LoginPage(fresh_page)
+    return LoginPage(fresh_page, demo_server).open()
 
 
 @pytest.fixture(scope="session")

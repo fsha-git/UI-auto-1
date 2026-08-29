@@ -28,27 +28,27 @@
   <section>
     <p>
       Logged in as <strong id="logged-in-user">demo</strong>.
-      <button id="logout-btn">Logout</button>
+      <button id="logout-btn" data-testid="logout">Logout</button>
       <a href="demo.html">Back to demo</a>
     </p>
   </section>
 
   <section>
     <h2>Weekly Stats</h2>
-    <p id="loading">Loading...</p>
-    <p id="error-message" style="display: none;"></p>
-    <p id="empty-message" style="display: none;">No data available</p>
+    <p id="loading" data-testid="loading">Loading...</p>
+    <p id="error-message" data-testid="error-message" role="alert" style="display: none;"></p>
+    <p id="empty-message" data-testid="empty-message" style="display: none;">No data available</p>
 
-    <div id="chart-container" style="display: none;">
+    <div id="chart-container" data-testid="chart-container" style="display: none;">
       <svg id="chart" viewBox="0 0 300 160" preserveAspectRatio="none"></svg>
       <table id="stats-table">
         <thead><tr><th>Label</th><th>Value</th></tr></thead>
         <tbody></tbody>
       </table>
-      <p>Total: <span id="total-value"></span></p>
+      <p>Total: <span id="total-value" data-testid="total-value"></span></p>
     </div>
 
-    <button id="refresh-btn">Refresh</button>
+    <button id="refresh-btn" data-testid="refresh">Refresh</button>
   </section>
 
   <script>
@@ -81,6 +81,10 @@
         const height = (value / max) * 140;
         const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         rect.setAttribute('class', 'bar');
+        // Test contract: `data-testid` locates the bar, `data-value` carries the
+        // datum. Both MUST survive any chart re-implementation (canvas, chart
+        // library, ...) — tests/test_dashboard.py asserts against them.
+        rect.setAttribute('data-testid', 'chart-bar');
         rect.setAttribute('data-label', labels[i]);
         rect.setAttribute('data-value', String(value));
         rect.setAttribute('x', String(i * barWidth + 4));
@@ -95,6 +99,7 @@
       tableBody.innerHTML = '';
       labels.forEach((label, i) => {
         const row = document.createElement('tr');
+        row.dataset.testid = 'stats-row';
         row.innerHTML = `<td>${label}</td><td>${values[i]}</td>`;
         tableBody.appendChild(row);
       });

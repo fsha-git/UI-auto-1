@@ -1,37 +1,43 @@
-from playwright.sync_api import Page
+import re
+
+from playwright.sync_api import Page, expect
 
 from pages.demo_page import DemoPage
 from pages.login_page import LoginPage
 
 
-def test_login_with_valid_credentials_redirects_to_demo(login_page: LoginPage):
+def test_login_with_valid_credentials_redirects_to_demo(login_page: LoginPage, fresh_page: Page):
     login_page.login("demo", "demo123")
-    login_page.page.wait_for_url("**/demo.html")
-    assert DemoPage(login_page.page).todo_input.is_visible()
+    expect(fresh_page).to_have_url(re.compile(r"/demo\.html$"))
+    expect(DemoPage(fresh_page).todo_input).to_be_visible()
 
 
-def test_login_with_invalid_credentials_shows_error(login_page: LoginPage):
+def test_login_with_invalid_credentials_shows_error(login_page: LoginPage, fresh_page: Page):
     login_page.login("demo", "wrong-password")
-    assert login_page.error_text() == "Invalid username or password"
-    assert "login.html" in login_page.page.url
+    # web-first: retries until the submit handler has written the message,
+    # instead of snapshotting text_content() the instant the click returns.
+    expect(login_page.error_message).to_have_text("Invalid username or password")
+    expect(fresh_page).to_have_url(re.compile(r"/login\.html$"))
 
 
 def test_accessing_demo_without_login_redirects_to_login(fresh_page: Page, demo_server: str):
     fresh_page.goto(f"{demo_server}/demo.html")
-    fresh_page.wait_for_url("**/login.html")
+    expect(fresh_page).to_have_url(re.compile(r"/login\.html$"))
 
 
-def test_logout_clears_session_and_redirects_to_login(login_page: LoginPage):
+def test_logout_clears_session_and_redirects_to_login(login_page: LoginPage, fresh_page: Page):
     login_page.login("demo", "demo123")
-    login_page.page.wait_for_url("**/demo.html")
-    DemoPage(login_page.page).logout()
-    login_page.page.wait_for_url("**/login.html")
-    token = login_page.page.evaluate("localStorage.getItem('demo_auth_token')")
-    assert token is None
+    expect(fresh_page).to_have_url(re.compile(r"/demo\.html$"))
+
+    demo = DemoPage(fresh_page)
+    demo.logout()
+    expect(fresh_page).to_have_url(re.compile(r"/login\.html$"))
+    # the storage-key name is owned by the page-object layer, not by the test
+    assert not demo.has_session()
 
 
-def test_demo_page_fixture_starts_already_authenticated(demo_page: DemoPage):
+def test_demo_page_fixture_starts_already_authenticated(demo_page: DemoPage, page: Page):
     # The shared session logged in once via storage_state; this fixture never
     # touches login.html, proving no per-test login is happening.
-    assert "login.html" not in demo_page.page.url
-    assert demo_page.todo_input.is_visible()
+    expect(page).not_to_have_url(re.compile(r"/login\.html$"))
+    expect(demo_page.todo_input).to_be_visible()
