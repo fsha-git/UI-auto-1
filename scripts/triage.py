@@ -24,6 +24,10 @@ def run_against(html_path: Path) -> dict:
             "tests/test_demo.py",
             f"--demo-html={html_path}",
             f"--report-log={report_path}",
+            # Bug pages are *expected* to fail; reruns would only triple the
+            # runtime and emit extra "rerun" TestReport events that this
+            # script would misread as additional failing tests.
+            "--reruns", "0",
             "-q",
         ],
         cwd=ROOT,

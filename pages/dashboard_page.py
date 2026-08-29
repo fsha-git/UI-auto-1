@@ -1,40 +1,51 @@
-from playwright.sync_api import Page
+from playwright.sync_api import Page, expect
+
+from pages.base_page import BasePage
 
 
-class DashboardPage:
-    def __init__(self, page: Page):
-        self.page = page
-        self.loading = page.locator("#loading")
-        self.error_message = page.locator("#error-message")
-        self.empty_message = page.locator("#empty-message")
-        self.chart_bars = page.locator("#chart .bar")
-        self.table_rows = page.locator("#stats-table tbody tr")
-        self.total = page.locator("#total-value")
-        self.refresh_btn = page.locator("#refresh-btn")
+class DashboardPage(BasePage):
+    PATH = "dashboard.html"
 
-    def wait_for_loaded(self) -> None:
-        # #loading is hidden once fetch settles, regardless of which state
-        # (data/empty/error) it settles into.
-        self.loading.wait_for(state="hidden")
+    def __init__(self, page: Page, base_url: str = ""):
+        super().__init__(page, base_url)
+        self.loading = page.get_by_test_id("loading")
+        self.error_message = page.get_by_test_id("error-message")
+        self.empty_message = page.get_by_test_id("empty-message")
+        self.chart_container = page.get_by_test_id("chart-container")
+        # Both located by test id rather than by "#chart .bar" / "#stats-table
+        # tbody tr": `.bar` is also a *styling* class in dashboard.html, and
+        # the row selector hard-coded the <table> structure.
+        self.chart_bars = page.get_by_test_id("chart-bar")
+        self.table_rows = page.get_by_test_id("stats-row")
+        self.total = page.get_by_test_id("total-value")
+        self.refresh_btn = page.get_by_test_id("refresh")
+        self.logout_btn = page.get_by_test_id("logout")
 
-    def bar_values(self) -> list[int]:
-        count = self.chart_bars.count()
-        return [int(self.chart_bars.nth(i).get_attribute("data-value")) for i in range(count)]
-
-    def row_count(self) -> int:
-        return self.table_rows.count()
-
-    def total_value(self) -> int:
-        return int(self.total.text_content() or "0")
+    # --- actions -----------------------------------------------------------
 
     def click_refresh(self) -> None:
         self.refresh_btn.click()
 
-    def is_error_visible(self) -> bool:
-        return self.error_message.is_visible()
+    # --- assertion helpers -------------------------------------------------
 
-    def is_empty_visible(self) -> bool:
-        return self.empty_message.is_visible()
+    def expect_loaded(self) -> None:
+        """Wait until the fetch has settled, whichever state it settles into
+        (data / empty / error). Web-first: retries until #loading is hidden."""
+        expect(self.loading).to_be_hidden()
 
-    def error_text(self) -> str:
-        return self.error_message.text_content() or ""
+    def expect_bar_values(self, values: list[int]) -> None:
+        """Assert the chart renders exactly ``values``, in order.
+
+        Owns the `data-value` test contract (see the comment in
+        dashboard.html) so that a chart re-implementation only has to keep
+        that attribute, not match a selector shape.
+        """
+        expect(self.chart_bars).to_have_count(len(values))
+        for index, value in enumerate(values):
+            expect(self.chart_bars.nth(index)).to_have_attribute("data-value", str(value))
+
+    def expect_total(self, total: int) -> None:
+        expect(self.total).to_have_text(str(total))
+
+    def expect_row_count(self, count: int) -> None:
+        expect(self.table_rows).to_have_count(count)

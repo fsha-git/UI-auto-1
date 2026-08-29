@@ -1,6 +1,13 @@
 from pathlib import Path
 
 import pytest
+from playwright.sync_api import expect
+
+# Global retry window for every web-first assertion (expect(...)). Must stay
+# below pytest.ini's `timeout` so a retrying assertion fails with a useful
+# Playwright diff instead of being killed by the hang-guard.
+EXPECT_TIMEOUT_MS = 5_000
+expect.set_options(timeout=EXPECT_TIMEOUT_MS)
 
 PROJECT_ROOT = Path(__file__).parent
 WEB_DIR = PROJECT_ROOT / "web"

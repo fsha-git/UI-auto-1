@@ -1,6 +1,7 @@
 pytest
 pytest-playwright
 pytest-reportlog
+pytest-rerunfailures
 pytest-timeout
 pytest-html
 pytest-cov

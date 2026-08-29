@@ -18,24 +18,24 @@
 
   <section>
     <h2>To-Do List</h2>
-    <input type="text" id="todo-input" placeholder="Enter a task">
-    <button id="add-btn">Add</button>
-    <ul id="todo-list"></ul>
+    <input type="text" id="todo-input" data-testid="todo-input" placeholder="Enter a task">
+    <button id="add-btn" data-testid="add-todo">Add</button>
+    <ul id="todo-list" data-testid="todo-list"></ul>
   </section>
 
   <section>
     <h2>Status Toggle</h2>
     <label>
-      <input type="checkbox" id="status-checkbox">
+      <input type="checkbox" id="status-checkbox" data-testid="status-checkbox">
       Enable feature
     </label>
-    <p id="status-label">Status: OFF</p>
+    <p id="status-label" data-testid="status-label">Status: OFF</p>
   </section>
 
   <section>
     <h2>Counter</h2>
-    <button id="counter-btn">Click me</button>
-    <span id="counter">0</span>
+    <button id="counter-btn" data-testid="counter-increment">Click me</button>
+    <span id="counter" data-testid="counter-value">0</span>
   </section>
 
   <script>

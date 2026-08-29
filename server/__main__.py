@@ -10,7 +10,7 @@ from functools import partial
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from server.app import DemoApiHandler
+from server.app import ACCOUNTS, DemoApiHandler, load_accounts
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
@@ -32,7 +32,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument(
+        "--accounts",
+        default=None,
+        help="CSV of username,password rows to register in addition to the "
+        "built-in demo account (see perf/accounts.csv). Load tests use these "
+        "so they never share an identity with the functional suite.",
+    )
     args = parser.parse_args()
+
+    if args.accounts:
+        registered = load_accounts(args.accounts)
+        print(f"Registered {registered} account(s) from {args.accounts}", flush=True)
+    print(f"Accounts available: {len(ACCOUNTS)}", flush=True)
 
     handler = partial(KeepAliveHandler, directory=str(WEB_DIR))
     httpd = LoadTestServer((args.host, args.port), handler)

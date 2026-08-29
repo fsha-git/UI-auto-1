@@ -18,6 +18,12 @@ PARAM_DEFAULTS: dict[str, dict[str, int]] = {
     "performance": {"threads": 20, "rampup": 10, "duration": 60},
     "stress": {"threads": 200, "rampup": 120, "duration": 180},
     "concurrency": {"threads": 50, "rampup": 2, "loops": 10, "rendezvous": 50},
+    "soak": {"threads": 20, "rampup": 30, "duration": 1800},
+    "spike": {
+        "threads": 20, "rampup": 10, "duration": 180,
+        "spike_threads": 300, "spike_rampup": 5, "spike_duration": 30, "spike_delay": 60,
+    },
+    "stepload": {"step_threads": 50, "step_rampup": 5, "step_seconds": 60},
 }
 INFRA_PROPS = {"host", "port"}
 
