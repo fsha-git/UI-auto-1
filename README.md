@@ -30,14 +30,14 @@ pytest
 | `web/dashboard.html` | 数据看板页（柱状图 + 表格 + 合计），需登录，拉取 `GET /api/stats` |
 | `web/profile.html` | 个人资料页（用户名 + 实时待办数），从 `demo.html` 以新标签页（`target=_blank`）打开，拉取 `GET /api/profile` |
 | `web/popup.html` | 快速便签弹窗，由 `demo.html` 的按钮 `window.open()` 打开，`postMessage` 回传后自关闭 |
-| `web/bugs/*.html` | `demo.html` 的 11 个冻结变异体，每个注入一个缺陷，用于变异测试 |
+| `web/bugs/*.html` | 15 个冻结变异体（`bug_*`），每个注入一个缺陷，用于变异测试：11 个经典 demo 变异体 + 4 个多窗口变异体（`bug_win_*`，其中两个通过 `win_*` 伴生页面注入缺陷） |
 | `web/i18n/` | 前端读取的文案目录（`catalog.js`）与应用脚本（`apply.js`） |
 | `server/app.py` | Demo 后端（静态文件 + `/api/*` JSON 接口：登录、看板数据、待办 CRUD） |
 | `pages/base_page.py` | Page Object 公共基础设施（导航、session token、定位器策略） |
 | `pages/i18n.py` | 测试端读取的文案目录解析器（对应 `web/i18n/catalog.js`） |
 | `pages/login_page.py`、`pages/demo_page.py`、`pages/dashboard_page.py`、`pages/profile_page.py`、`pages/popup_page.py` | 各页面的 Page Object；多窗口管道（`expect_page` / `expect_popup`）封装在 `DemoPage` 里 |
 | `tests/` | pytest 测试；`tests/test_api.py` 是纯 API 测试（不启动浏览器），`tests/test_windows.py` 是多标签页/弹窗测试 |
-| `scripts/triage.py` | 用 `tests/test_demo.py` 逐一跑 `web/bugs/*.html`，统计每个缺陷被哪些测试捕获 |
+| `scripts/triage.py` | 对 `web/bugs/bug_*.html` 逐一跑对应的测试文件（经典变异体跑 `test_demo.py`，`bug_win_*` 跑 `test_windows.py`），统计每个缺陷被哪些测试捕获 |
 | `scripts/js_coverage.py` | 基于 CDP 的 V8 精确覆盖率采集器，生成前端内联 JS 的染色报告 |
 | `perf/` | JMeter 七类测试计划（负载/压力/阶梯/尖峰/长稳/并发/个人资料只读）、回归门禁、跨运行趋势看板 |
 | `reports/` | 各类测试报告输出目录（已 gitignore，见下文） |
@@ -115,9 +115,11 @@ pytest --demo-html web/bugs/bug_add_dedupes_items.html \
 
 ## 核心脚本
 
-- **`scripts/triage.py`** — 变异测试的核心：对 `web/bugs/` 下每一个变异体跑一遍
-  `tests/test_demo.py`，记录哪些用例捕获了哪个缺陷。改动共享标记（Page Object /
-  定位器 / 文案）后必须重新生成并 diff：
+- **`scripts/triage.py`** — 变异测试的核心：对 `web/bugs/` 下每一个 `bug_*`
+  变异体跑一遍对应的测试文件（按文件名前缀选择：经典变异体 →
+  `tests/test_demo.py`，`bug_win_*` → `tests/test_windows.py`），记录哪些用例
+  捕获了哪个缺陷。改动共享标记（Page Object / 定位器 / 文案）后必须重新生成并
+  diff：
 
   ```bash
   python scripts/triage.py --write /tmp/TRIAGE_new.md

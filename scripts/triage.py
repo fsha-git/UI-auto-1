@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
-"""Run tests/test_demo.py against each buggy demo page in web/bugs/ and
+"""Run the matching test file against each buggy demo page in web/bugs/ and
 report which test(s) catch each injected defect. (test_login.py is skipped
 here since login behavior doesn't vary by --demo-html.)
+
+Which suite runs is picked by the mutant's filename prefix (SUITE_FOR_PREFIX):
+plain `bug_*` mutants get tests/test_demo.py, `bug_win_*` mutants get
+tests/test_windows.py. A `bug_win_*` mutant is a demo.html copy whose
+Windows & Tabs wiring carries the defect — either directly, or by opening a
+companion mutant page (`win_*.html`, no `bug_` prefix so it is not triaged
+on its own) in place of the real profile/popup page.
 
 Usage:
     python scripts/triage.py [--write TRIAGE.md]
@@ -15,13 +22,26 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 BUGS_DIR = ROOT / "web" / "bugs"
 
+#: Longest prefix wins; anything unmatched falls back to tests/test_demo.py.
+SUITE_FOR_PREFIX = {
+    "bug_win_": "tests/test_windows.py",
+}
+DEFAULT_SUITE = "tests/test_demo.py"
+
+
+def suite_for(html_path: Path) -> str:
+    for prefix, suite in sorted(SUITE_FOR_PREFIX.items(), key=lambda kv: -len(kv[0])):
+        if html_path.name.startswith(prefix):
+            return suite
+    return DEFAULT_SUITE
+
 
 def run_against(html_path: Path) -> dict:
     report_path = ROOT / f".triage-report-{html_path.stem}.json"
     subprocess.run(
         [
             sys.executable, "-m", "pytest",
-            "tests/test_demo.py",
+            suite_for(html_path),
             f"--demo-html={html_path}",
             f"--report-log={report_path}",
             # Bug pages are *expected* to fail; reruns would only triple the

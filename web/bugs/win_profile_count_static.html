@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>UI Automation Demo Profile</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 480px; margin: 40px auto; }
+  h1 { font-size: 20px; }
+  section { margin-bottom: 24px; padding: 12px; border: 1px solid #ddd; border-radius: 6px; }
+  #profile-error { color: #b00020; }
+  #profile-loading { color: #666; }
+</style>
+<script src="../i18n/catalog.js"></script>
+<script src="../i18n/apply.js"></script>
+</head>
+<body>
+  <h1 data-i18n="profileTitle">Your profile</h1>
+
+  <section>
+    <p id="profile-loading" data-testid="profile-loading">Loading...</p>
+    <p id="profile-error" data-testid="profile-error" role="alert" style="display: none;"></p>
+
+    <div id="profile-details" data-testid="profile-details" style="display: none;">
+      <p>Signed in as <strong id="profile-username" data-testid="profile-username"></strong></p>
+      <p>Open todos: <span id="profile-todo-count" data-testid="profile-todo-count"></span></p>
+    </div>
+
+    <p><a href="../demo.html">Back to demo</a></p>
+  </section>
+
+  <script>
+    const profileLoading = document.getElementById('profile-loading');
+    const profileError = document.getElementById('profile-error');
+    const profileDetails = document.getElementById('profile-details');
+
+    function setState(state) {
+      profileLoading.style.display = state === 'loading' ? 'block' : 'none';
+      profileError.style.display = state === 'error' ? 'block' : 'none';
+      profileDetails.style.display = state === 'data' ? 'block' : 'none';
+    }
+
+    async function loadProfile() {
+      setState('loading');
+      try {
+        const response = await fetch('/api/profile', {
+          headers: { Authorization: 'Bearer ' + localStorage.getItem('demo_auth_token') },
+        });
+        if (!response.ok) {
+          setState('error');
+          profileError.textContent = `Failed to load profile (status ${response.status})`;
+          return;
+        }
+        const data = await response.json();
+        document.getElementById('profile-username').textContent = data.username;
+        // BUG: the todo count is hardcoded instead of rendered from the API
+        document.getElementById('profile-todo-count').textContent = '0';
+        setState('data');
+      } catch (err) {
+        setState('error');
+        profileError.textContent = 'Failed to load profile (network error)';
+      }
+    }
+
+    loadProfile();
+  </script>
+</body>
+</html>

@@ -13,9 +13,11 @@ you must not break, and how to prove you didn't.
 
 ## 1. The invariant that matters most
 
-**`web/bugs/*.html` are 11 frozen mutants of `web/demo.html`, each carrying one
-injected defect. `scripts/triage.py` runs `tests/test_demo.py` against every one
-of them and records which tests catch which bug in `TRIAGE.md`.**
+**`web/bugs/bug_*.html` are 15 frozen mutants, each carrying one injected
+defect. `scripts/triage.py` runs the matching test file against every one —
+`tests/test_demo.py` for the classic demo mutants, `tests/test_windows.py` for
+the `bug_win_*` multi-window mutants (see `SUITE_FOR_PREFIX` in the script) —
+and records which tests catch which bug in `TRIAGE.md`.**
 
 ```bash
 .venv/bin/python scripts/triage.py --write /tmp/TRIAGE_new.md
@@ -24,9 +26,12 @@ diff TRIAGE.md /tmp/TRIAGE_new.md      # MUST be empty
 
 A non-empty diff means your change silently weakened the suite's ability to
 detect real defects. That is the most expensive kind of regression in a test
-framework, and nothing else you did matters until it is fixed.
+framework, and nothing else you did matters until it is fixed. The one
+legitimate non-empty diff is **purely additive**: a change that introduces new
+mutants regenerates and commits `TRIAGE.md` in the same change, and every
+pre-existing section must remain byte-identical.
 
-Two rules follow:
+Three rules follow:
 
 - **Changing shared static markup in `web/demo.html` means changing all 11
   mutants too.** They are byte-identical to it in the regions tests locate
@@ -38,11 +43,23 @@ Two rules follow:
   mutant's defect lives in exactly that code. This is why the copy catalogue
   (§4) covers only static markup: rewriting that JS would put the injected
   defects at risk for no gain.
+- **New feature tests ship with mutants.** A new UI feature area with its own
+  test file also gets at least one frozen mutant per defect class those tests
+  claim to catch, so the triage report *proves* the detection instead of
+  asserting it. To add a group: pick a filename prefix (`bug_win_*` is the
+  multi-window group), map it in `SUITE_FOR_PREFIX` in `scripts/triage.py`,
+  and regenerate `TRIAGE.md`. Where the defect lives in a page other than the
+  one `--demo-html` swaps (e.g. the profile tab or the popup), the `bug_*`
+  mutant is a demo copy that opens a **companion mutant page** — named without
+  the `bug_` prefix (`win_profile_count_static.html`) so triage never runs it
+  directly. Every mutant must be CAUGHT; a MISSED entry is a missing test, not
+  a report to commit.
 
-The mutants are older copies that predate the auth gate, the logout button, and
-the Windows & Tabs section. That is expected; they only need to support
-`tests/test_demo.py` — which is also why multi-window tests live in
-`tests/test_windows.py`, never in `tests/test_demo.py`.
+The classic mutants are older copies that predate the auth gate, the logout
+button, and the Windows & Tabs section; the `bug_win_*` mutants carry only the
+Windows & Tabs section. Both are expected: a mutant only needs to support the
+test file triage runs against it — which is also why multi-window tests live
+in `tests/test_windows.py`, never in `tests/test_demo.py`.
 
 ---
 
@@ -266,6 +283,7 @@ in a follow-up:
 | `server/app.py` endpoints, or either coverage pipeline (`scripts/js_coverage.py`, the `js_coverage` fixture, `pytest-cov` config) | `COVERAGE.md` — endpoint table, pipeline description, and refresh the 快照 section's date/numbers when they materially change |
 | anything under `perf/` | `PERFORMANCE.md` — scenario table, 设计意图 bullet for a new scenario, thresholds |
 | `tests/test_dashboard.py` | `MOCK_TESTS.md` — it enumerates that file's scenarios one by one |
+| a new feature-area test file | new `bug_*` mutants + regenerated `TRIAGE.md` (§1), and the `web/bugs/` row in `README.md` |
 | a convention in this file (new rule, changed count, new trap) | `AGENTS.md` itself — including the examples above that name specific classes and scenario counts, which go stale silently |
 
 `TRIAGE.md` is the exception: it is **generated** by `scripts/triage.py` and is
