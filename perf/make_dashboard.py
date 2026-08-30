@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-TYPE_ORDER = ["performance", "stress", "stepload", "spike", "soak", "concurrency"]
+TYPE_ORDER = ["performance", "stress", "stepload", "spike", "soak", "concurrency", "profile"]
 TYPE_TITLES = {
     "performance": "性能基线 (performance)",
     "stress": "压力 (stress)",
@@ -23,6 +23,7 @@ TYPE_TITLES = {
     "stepload": "阶梯加压 (stepload)",
     "spike": "尖峰 (spike)",
     "soak": "稳定性 (soak)",
+    "profile": "个人资料只读 (profile)",
 }
 
 BLUE = "#4a7dfc"

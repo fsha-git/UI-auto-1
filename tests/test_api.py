@@ -190,6 +190,31 @@ def test_delete_on_non_todo_path_returns_404(api_request_context: APIRequestCont
     assert response.status == 404
 
 
+# -- profile ----------------------------------------------------------------
+# Backs web/profile.html (opened from demo.html in a new tab): the profile is
+# derived state over the todo store, so these tests pin that it tracks writes.
+
+def test_profile_returns_username_and_zero_count_initially(api_request_context: APIRequestContext):
+    response = api_request_context.get("/api/profile", headers=AUTH_HEADERS)
+    assert response.status == 200
+    assert response.json() == {"username": DEMO_USERNAME, "todoCount": 0}
+
+
+def test_profile_todo_count_tracks_additions_and_deletions(api_request_context: APIRequestContext):
+    first = api_request_context.post("/api/todos", data={"text": "one"}, headers=AUTH_HEADERS).json()
+    api_request_context.post("/api/todos", data={"text": "two"}, headers=AUTH_HEADERS)
+    assert api_request_context.get("/api/profile", headers=AUTH_HEADERS).json()["todoCount"] == 2
+
+    api_request_context.delete(f"/api/todos/{first['id']}", headers=AUTH_HEADERS)
+    assert api_request_context.get("/api/profile", headers=AUTH_HEADERS).json()["todoCount"] == 1
+
+
+@pytest.mark.parametrize("headers", [None, {"Authorization": "Bearer wrong-token"}])
+def test_profile_requires_valid_bearer_token(api_request_context: APIRequestContext, headers):
+    response = api_request_context.get("/api/profile", headers=headers)
+    assert response.status == 401
+
+
 # -- multi-account data isolation -------------------------------------------
 # The load tests run under their own accounts (perf/accounts.csv) rather than
 # sharing `demo`. These tests are what make that separation worth having:
@@ -244,6 +269,14 @@ def test_account_cannot_delete_another_accounts_todo(
 
     still_there = api_request_context.get("/api/todos", headers=AUTH_HEADERS)
     assert still_there.json()["todos"] == [todo]
+
+
+def test_profile_counts_are_isolated_per_account(api_request_context: APIRequestContext, other_account):
+    api_request_context.post("/api/todos", data={"text": "demo's todo"}, headers=AUTH_HEADERS)
+
+    theirs = api_request_context.get("/api/profile", headers=other_account)
+    assert theirs.status == 200
+    assert theirs.json() == {"username": OTHER_USERNAME, "todoCount": 0}
 
 
 def test_todo_ids_stay_unique_across_accounts(api_request_context: APIRequestContext, other_account):

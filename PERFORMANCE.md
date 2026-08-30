@@ -1,6 +1,8 @@
 # JMeter 负载 / 压力 / 并发测试
 
-用 JMeter 对 `server/app.py` 的 `/api/*` 接口做六类非功能测试：性能基线、阶梯加压定容量、尖峰、长稳（soak）、压力、并发。
+用 JMeter 对 `server/app.py` 的 `/api/*` 接口做七类非功能测试：性能基线、阶梯加压定容量、尖峰、长稳（soak）、压力、并发、个人资料只读（profile）。
+
+`profile` 场景是独立新增的 JMX（`perf/profile.jmx`），而不是往现有场景里加请求：`check_jtl.py` 的回归门禁按场景对比历史中位数，往老场景里混入新请求会改变其延迟构成、污染历史基线。独立场景从零积累自己的基线，互不影响。
 
 前端渲染性能不在 JMeter 覆盖范围内，由 `tests/test_frontend_perf.py` 单独兜底（见文末）。
 
@@ -45,7 +47,7 @@ pytest 夹具（`tests/conftest.py` 的 `demo_server`）用随机端口在进程
 ## 一键运行
 
 ```bash
-perf/run_perf.sh all            # performance / stress / stepload / spike / concurrency
+perf/run_perf.sh all            # performance / stress / stepload / spike / concurrency / profile
 perf/run_perf.sh performance    # 只跑某一类
 perf/run_perf.sh soak           # 默认 30 分钟，不含在 all 里，需单独跑
 ```
@@ -64,7 +66,7 @@ perf/run_perf.sh concurrency -Jthreads=100 -Jrendezvous=100 -Jloops=20
 
 端口冲突时用 `PERF_PORT=8001 perf/run_perf.sh all` 换端口。
 
-## 六个测试场景
+## 七个测试场景
 
 | 场景 | JMX | 默认参数 | 流程 | 通过标准 |
 |---|---|---|---|---|
@@ -74,6 +76,7 @@ perf/run_perf.sh concurrency -Jthreads=100 -Jrendezvous=100 -Jloops=20
 | 长稳（soak） | `perf/soak.jmx` | threads=20, rampup=30s, duration=1800s，带思考时间 | 与性能基线同流程，持续 30 分钟 | 错误率 ≤0.5%，5xx =0，吞吐 ≥40 req/s；看延迟/吞吐是否随时间漂移 |
 | 压力（线性加压） | `perf/stress.jmx` | threads=200, rampup=120s, duration=180s，无思考时间 | 同上（最大压力） | 错误率 ≤10%，5xx =0；延迟仅作观察 |
 | 并发（集合点） | `perf/concurrency.jmx` | threads=50, rendezvous=50, loops=10, rampup=2s，固定单账号 | POST 和 DELETE 各挂 SyncTimer，50 线程同时发起；tearDown 校验该账号 todos 为空 | 错误率 =0，5xx =0，结束时 store 为空 |
+| 个人资料只读（profile） | `perf/profile.jmx` | threads=20, rampup=10s, duration=60s，思考时间 100–300ms | 登录一次 + 种 3 条 todo → 循环 GET `/api/profile`(200) | 错误率 ≤1%，p95 ≤800ms，吞吐 ≥50 req/s |
 
 `stepload.jmx` 只用 JMeter 自带元件实现阶梯：4 个 ThreadGroup 用 `ThreadGroup.delay` 错开启动、用 `${__jexl3(...)}` 算出各自时长以便同时结束，因此**不依赖 jmeter-plugins**。
 
@@ -89,6 +92,7 @@ perf/run_perf.sh concurrency -Jthreads=100 -Jrendezvous=100 -Jloops=20
 - **长稳**：30 分钟低压恒定负载，专门抓随时间累积的问题（内存/句柄泄漏、连接池耗尽、缓存无限增长）。判据不是绝对延迟，而是**延迟和吞吐是否随时间漂移**。
 - **压力**：120 秒线性加压到 200 线程再保持 60 秒，无思考时间。在 dashboard 的 Response Times Over Time / Codes per Second 图上找性能拐点。
 - **并发**：SyncTimer 让 N 个线程在集合点同时发出 POST（再同时 DELETE），冲击 `TodoStore` 的 `threading.Lock` 与 `_next_id` 分配。DELETE 出现 404 即意味着两个线程拿到同一 id（锁失效）；tearDown 线程组最后 GET `/api/todos` 断言 `"todos": []`，验证无丢失更新。
+- **个人资料只读**：`/api/profile` 是 `web/profile.html`（demo.html 新标签页打开）的后端。它是派生只读接口（用户名 + `todo_store.list()` 计数），每线程先种 3 条 todo 使计数路径非空，然后纯读循环——给这个新端点一条自己的吞吐/延迟基线与回归门禁。
 
 ## 报告解读
 
@@ -149,7 +153,7 @@ pytest tests/test_frontend_perf.py -v     # 只跑前端性能
 pytest -m "not perf"                      # 跑其余测试，跳过性能护栏
 ```
 
-三个用例分别管：单次大数据集渲染预算、导航 timing 预算、以及**渲染开销是否近似线性**（10 倍数据量不应贵 10 倍以上——这条才是真正能抓到 O(n²) 渲染的，绝对预算抓不到）。预算刻意放宽，目的是拦住数量级的劣化，不是卡几毫秒。
+五个用例分别管：dashboard 单次大数据集渲染预算、dashboard 导航 timing 预算、**渲染开销是否近似线性**（10 倍数据量不应贵 10 倍以上——这条才是真正能抓到 O(n²) 渲染的，绝对预算抓不到）、`profile.html` 的导航 timing 预算、以及快速便签弹窗从点击到可交互的预算（窗口创建 + 导航 + i18n 脚本都在这条路径上）。预算刻意放宽，目的是拦住数量级的劣化，不是卡几毫秒。
 
 ## 基线快照（2026-08-26，Apple Silicon 本机回环）
 

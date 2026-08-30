@@ -22,6 +22,7 @@
 | `GET /api/todos` | 列出待办（需要 `Authorization: Bearer <token>`） |
 | `POST /api/todos` | 新增待办（鉴权 + 文本校验：非空、去首尾空白、长度上限） |
 | `DELETE /api/todos/<id>` | 删除待办（鉴权；404 / 400 错误分支） |
+| `GET /api/profile` | 当前账号的用户名 + 实时待办数（鉴权；被 `web/profile.html` 消费） |
 
 API 测试覆盖：正常路径、鉴权失败（缺 token / 错 token）、参数校验（缺字段、
 空文本、纯空白、类型错误、超长）、非法 JSON 请求体、404 与非法 id 等错误分支。
@@ -57,6 +58,19 @@ API 测试覆盖：正常路径、鉴权失败（缺 token / 错 token）、参�
 
 纯 API 测试不涉及页面，该夹具自动跳过。
 
+**运行时新开页面（弹窗 / 新标签页）的采集**：测试过程中由 `window.open()` /
+`target=_blank` 产生的新页面，通过 context 的 `"page"` 事件监听器补挂 CDP
+会话。这里有两个 V8 层面的坑（详见 `JsCoverageCollector.collect_all` 的注
+释）：弹窗与 opener 共享同一个 renderer 进程（同一 isolate），
+`Profiler.takePreciseCoverage` 会把**整个 isolate** 的待取覆盖一次抽干——谁
+先取谁拿到全部页面的条目；而每个会话的 `Debugger.scriptParsed` 只描述自己页
+面的脚本。因此同一测试的所有会话必须**合并成一次采集**：覆盖条目对照所有会
+话 scriptParsed 元数据的并集解析（script id 只在单个 isolate 内唯一，跨会话
+查找时还要求 URL 一致才采信）。残余限制：会话在新页面开始加载后才附着，附着
+前已跑完的顶层语句可能染成"红色但实际执行过"，所以 `tests/test_windows.py`
+保留了对 `profile.html` 的直接导航用例（走预先插桩的 `page` 夹具）作为可靠
+锚点。
+
 ## 四、运行方式
 
 ```bash
@@ -74,12 +88,19 @@ API 测试覆盖：正常路径、鉴权失败（缺 token / 错 token）、参�
 .venv/bin/pytest tests/test_api.py
 ```
 
-## 五、当前覆盖率快照（2026-08-25，54 个用例全通过）
+## 五、当前覆盖率快照（2026-08-30，90 个用例全通过）
 
-- Python 总覆盖率 **100%**（`server/app.py` 与 `pages/` 全部 100%）。
+- Python 侧 `server/app.py` 99%、`pages/` 除 `popup_page.py`（95%）外全部
+  100%。两处未覆盖行均属已知且合理：`server/app.py` 的 `fake_function`（故
+  意保留的死代码，见 AGENTS.md）；`popup_page.py` 里 `wait_for_close()` 的
+  `wait_for_event` 行——测试先断言 opener 侧结果再等关闭，届时弹窗通常已经
+  自关，`is_closed()` 守卫直接短路，该行是否执行取决于竞态时序，不值得为凑
+  数字而改断言顺序。
   值得一提：最初有几条「非法 JSON 请求体」分支没有覆盖到——Playwright 的
   `data=` 传字符串时会被序列化成合法 JSON，改用 `data=b"..."` 原样发送字节
   后才真正命中服务端的 JSON 解析异常分支。这正是染色报告的价值所在。
-- 前端 JS 总覆盖率 **91.1%**。染色报告能直观看出未覆盖的真实缺口，例如：
-  - `dashboard.html` 的登录守卫跳转分支（测试始终已登录，跳转不会发生）；
-  - `dashboard.html` 的 logout 按钮处理器（现有登出测试只针对 `demo.html`）。
+- 前端 JS 总覆盖率 **90.3%**。染色报告能直观看出未覆盖的真实缺口，例如：
+  - 各页面登录守卫的跳转分支（测试始终已登录，跳转不会发生）；
+  - `dashboard.html` 的 logout 按钮处理器（现有登出测试只针对 `demo.html`）；
+  - `profile.html` / `popup.html` 的守卫脚本按"红色但实际执行过"计入（附着
+    时机限制，见第三节末尾）。

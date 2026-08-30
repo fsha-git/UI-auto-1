@@ -50,6 +50,15 @@
     <span id="counter" data-testid="counter-value">0</span>
   </section>
 
+  <section>
+    <h2>Windows &amp; Tabs</h2>
+    <p>
+      <a href="profile.html" target="_blank" data-testid="profile-link" data-i18n="openProfile">Open profile</a>
+      <button id="open-popup-btn" data-testid="open-popup" data-i18n="openPopup">Quick note</button>
+    </p>
+    <p id="popup-result" data-testid="popup-result"></p>
+  </section>
+
   <script>
     document.getElementById('logout-btn').addEventListener('click', () => {
       localStorage.removeItem('demo_auth_token');
@@ -83,6 +92,20 @@
     counterBtn.addEventListener('click', () => {
       count += 1;
       counter.textContent = String(count);
+    });
+  </script>
+
+  <script>
+    document.getElementById('open-popup-btn').addEventListener('click', () => {
+      window.open('popup.html', 'quick-note', 'width=360,height=320');
+    });
+
+    window.addEventListener('message', (event) => {
+      // Only accept notes from our own popup: same origin, expected shape.
+      if (event.origin !== window.location.origin) return;
+      if (event.data && event.data.type === 'quick-note') {
+        document.getElementById('popup-result').textContent = event.data.text;
+      }
     });
   </script>
 </body>

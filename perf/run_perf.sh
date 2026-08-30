@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # JMeter 压测一键运行脚本。
-# 用法: perf/run_perf.sh [-v] [performance|stress|stepload|spike|soak|concurrency|all] \
+# 用法: perf/run_perf.sh [-v] [performance|stress|stepload|spike|soak|concurrency|profile|all] \
 #         [额外 -J 参数透传给 jmeter]
 #   -v  跟踪模式：打印每条执行的命令（set -x），便于排查脚本本身的问题。
 # 每类测试启动全新 server 进程（注册 perf/accounts.csv 的独立压测账号，且
@@ -44,10 +44,10 @@ if lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
 fi
 
 case "$TARGET" in
-    performance|stress|stepload|spike|soak|concurrency) TYPES=("$TARGET") ;;
+    performance|stress|stepload|spike|soak|concurrency|profile) TYPES=("$TARGET") ;;
     # soak 默认 30 分钟，不进 all；需要时单独跑 perf/run_perf.sh soak
-    all) TYPES=(performance stress stepload spike concurrency) ;;
-    *) echo "Unknown target: $TARGET (expected performance|stress|stepload|spike|soak|concurrency|all)" >&2; exit 1 ;;
+    all) TYPES=(performance stress stepload spike concurrency profile) ;;
+    *) echo "Unknown target: $TARGET (expected performance|stress|stepload|spike|soak|concurrency|profile|all)" >&2; exit 1 ;;
 esac
 
 thresholds_for() {
@@ -60,6 +60,8 @@ thresholds_for() {
         # 长稳：任何错误或吞吐塌陷都是资源泄漏的信号
         soak)        echo "--max-error-rate 0.5 --max-5xx 0 --min-throughput 40" ;;
         concurrency) echo "--max-error-rate 0 --max-5xx 0" ;;
+        # /api/profile 只读基线：与 performance 同级别的阈值
+        profile)     echo "--max-error-rate 1 --max-p95 800 --min-throughput 50" ;;
     esac
 }
 

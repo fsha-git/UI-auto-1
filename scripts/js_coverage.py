@@ -79,26 +79,59 @@ class JsCoverageCollector:
         cdp.send("Profiler.startPreciseCoverage", {"callCount": True, "detailed": True})
         return cdp, parsed
 
+    def collect_all(self, sessions):
+        """Take precise coverage from every session, then detach them all.
+
+        Sessions from one test must be collected together because of two V8
+        subtleties around same-process pages (a window.open popup or a
+        target=_blank tab shares its opener's renderer, hence its isolate):
+
+        - ``Profiler.takePreciseCoverage`` drains the *isolate's* pending
+          coverage, so whichever session takes first receives the entries for
+          every same-process page — and a later take (or a detach happening
+          before another session's take) leaves nothing for the rest.
+        - Each session's ``Debugger.scriptParsed`` stream only describes its
+          own page's scripts.
+
+        So the coverage entries are resolved against the union of every
+        session's scriptParsed metadata. Script ids are only unique within
+        one isolate, so a cross-session lookup also requires the entry's and
+        the metadata's URLs to agree before it is trusted.
+        """
+        combined_meta: dict[str, dict] = {}
+        for _, parsed in sessions:
+            combined_meta.update(parsed)
+
+        for session in sessions:
+            cdp, parsed = session
+            try:
+                result = cdp.send("Profiler.takePreciseCoverage")
+            except Exception:
+                continue  # page/context already closed — nothing to collect
+            for entry in result.get("result", []):
+                meta = parsed.get(entry["scriptId"])
+                if meta is None:
+                    meta = combined_meta.get(entry["scriptId"])
+                    if meta is None or meta.get("url") != entry.get("url"):
+                        continue
+                record = self._record_for(meta)
+                if record is None:
+                    continue
+                ranges = [
+                    (r["startOffset"], r["endOffset"], r["count"])
+                    for fn in entry.get("functions", [])
+                    for r in fn.get("ranges", [])
+                ]
+                record.apply_ranges(ranges)
+
+        for cdp, _ in sessions:
+            try:
+                cdp.detach()
+            except Exception:
+                pass  # page/context already closed — nothing to detach
+
     def collect(self, session):
-        cdp, parsed = session
-        try:
-            result = cdp.send("Profiler.takePreciseCoverage")
-            cdp.detach()
-        except Exception:
-            return  # page/context already closed — nothing to collect
-        for entry in result.get("result", []):
-            meta = parsed.get(entry["scriptId"])
-            if meta is None:
-                continue
-            record = self._record_for(meta)
-            if record is None:
-                continue
-            ranges = [
-                (r["startOffset"], r["endOffset"], r["count"])
-                for fn in entry.get("functions", [])
-                for r in fn.get("ranges", [])
-            ]
-            record.apply_ranges(ranges)
+        self.collect_all([session])
 
     def _record_for(self, meta: dict) -> ScriptRecord | None:
         """Map a scriptParsed event to a ScriptRecord, slicing the inline

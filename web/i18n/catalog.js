@@ -22,7 +22,12 @@ window.I18N_CATALOGS = {
     "loginSubmit": "Log in",
     "usernameLabel": "Username",
     "passwordLabel": "Password",
-    "invalidCredentials": "Invalid username or password"
+    "invalidCredentials": "Invalid username or password",
+    "openProfile": "Open profile",
+    "openPopup": "Quick note",
+    "popupNotePlaceholder": "Type a note",
+    "popupSend": "Send to main page",
+    "profileTitle": "Your profile"
   },
   "zh": {
     "todoPlaceholder": "输入任务",
@@ -34,6 +39,11 @@ window.I18N_CATALOGS = {
     "loginSubmit": "登录",
     "usernameLabel": "用户名",
     "passwordLabel": "密码",
-    "invalidCredentials": "用户名或密码错误"
+    "invalidCredentials": "用户名或密码错误",
+    "openProfile": "打开个人资料",
+    "openPopup": "快速便签",
+    "popupNotePlaceholder": "输入便签内容",
+    "popupSend": "发送到主页面",
+    "profileTitle": "你的个人资料"
   }
 };

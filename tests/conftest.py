@@ -113,12 +113,32 @@ def js_coverage_collector(demo_server: str):
 
 @pytest.fixture(autouse=True)
 def js_coverage(request: pytest.FixtureRequest, js_coverage_collector: JsCoverageCollector):
-    """Instrument every Playwright page a test uses. No-op for API tests."""
+    """Instrument every Playwright page a test uses. No-op for API tests.
+
+    Pages born *during* the test (window.open popups, target=_blank tabs) are
+    instrumented too, via a context "page" listener. Caveat: their CDP session
+    attaches only after the new page has started loading, so top-level inline
+    script statements that already ran can show as red-but-executed in the
+    report; tests/test_windows.py compensates with direct navigations through
+    the pre-instrumented ``page`` fixture."""
     sessions = []
+    contexts = []
+
+    def instrument_late_page(late_page: Page) -> None:
+        sessions.append(js_coverage_collector.start(late_page))
+
     for fixture_name in ("page", "fresh_page"):
         if fixture_name in request.fixturenames:
             page = request.getfixturevalue(fixture_name)
             sessions.append(js_coverage_collector.start(page))
+            if page.context not in contexts:
+                contexts.append(page.context)
+                page.context.on("page", instrument_late_page)
     yield
-    for session in sessions:
-        js_coverage_collector.collect(session)
+    for context in contexts:
+        context.remove_listener("page", instrument_late_page)
+    # One combined pass: a popup shares its opener's V8 isolate, and taking
+    # coverage drains that isolate for all its pages at once — see
+    # JsCoverageCollector.collect_all for why sessions can't be collected
+    # one at a time.
+    js_coverage_collector.collect_all(sessions)
