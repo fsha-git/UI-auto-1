@@ -10,18 +10,27 @@ class DemoPage(BasePage):
 
     def __init__(self, page: Page, base_url: str = ""):
         super().__init__(page, base_url)
-        self.todo_input = page.get_by_test_id("todo-input")
-        self.add_btn = page.get_by_test_id("add-todo")
-        self.todo_list = page.get_by_test_id("todo-list")
+        # Tier 1 -- role + accessible name (see the policy in base_page.py).
+        # The input's name comes from its placeholder, which is the weakest
+        # source of an accessible name: placeholders get reworded for UX
+        # reasons more readily than button labels do.
+        self.todo_input = page.get_by_role("textbox", name="Enter a task")
+        self.add_btn = page.get_by_role("button", name="Add")
+        self.status_checkbox = page.get_by_role("checkbox", name="Enable feature")
+        self.counter_btn = page.get_by_role("button", name="Click me")
+        self.logout_btn = page.get_by_role("button", name="Logout")
+
         # Items are located by ARIA role, not by the `li` tag: wrapping each
         # item in a <div role="listitem"> (or swapping ul/li for a styled
         # list) keeps this working, where "#todo-list li" would break.
+        self.todo_list = page.get_by_test_id("todo-list")
         self.todo_items = self.todo_list.get_by_role("listitem")
-        self.status_checkbox = page.get_by_test_id("status-checkbox")
+
+        # Tier 3 -- these have no accessible name, so tier 1 does not apply:
+        # the <ul> is an unlabelled `list`, and the two below are an
+        # unlabelled `paragraph` and a bare text node.
         self.status_label = page.get_by_test_id("status-label")
-        self.counter_btn = page.get_by_test_id("counter-increment")
         self.counter = page.get_by_test_id("counter-value")
-        self.logout_btn = page.get_by_test_id("logout")
 
     # --- actions -----------------------------------------------------------
 

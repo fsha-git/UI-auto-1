@@ -2,6 +2,27 @@ from __future__ import annotations
 
 from playwright.sync_api import Page
 
+# ---------------------------------------------------------------------------
+# Locator policy, in strict priority order. Every locator in pages/ picks the
+# highest tier that is actually available for that element, and says so when
+# it has to fall back:
+#
+#   1. role + accessible name   get_by_role("button", name="Add")
+#   2. label / placeholder      get_by_label(...) / get_by_placeholder(...)
+#   3. test id                  get_by_test_id(...)   (a purpose-built anchor)
+#   4. CSS / XPath              locator(...)          (last resort)
+#
+# Tiers 1-2 target what a user (or a screen reader) actually perceives, so the
+# tests double as a check that the UI is reachable. The cost is that they bind
+# to visible copy: renaming a button breaks them. That is a deliberate trade,
+# and `data-testid` attributes are kept in the HTML throughout as the tier-3
+# anchor to drop back to if the semantics ever regress.
+#
+# Tier 1 requires a *name*. An element with a role but no accessible name
+# (an unlabelled <ul>, a <tr>, a decorative <div>) does not qualify, and
+# correctly falls through to its test id.
+# ---------------------------------------------------------------------------
+
 # The demo app's session key. This is an *implementation detail of the app*:
 # it lives here, inside the page-object layer, so tests never have to know it
 # (and so renaming it is a one-line change).

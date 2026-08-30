@@ -8,18 +8,35 @@ class DashboardPage(BasePage):
 
     def __init__(self, page: Page, base_url: str = ""):
         super().__init__(page, base_url)
+        # Tier 1 -- role + accessible name (see the policy in base_page.py).
+        self.refresh_btn = page.get_by_role("button", name="Refresh")
+        self.logout_btn = page.get_by_role("button", name="Logout")
+
+        # Tier 1, with a caveat worth knowing. This paragraph is display:none
+        # until a request fails, so it is absent from the accessibility tree
+        # in the default and success states and this locator resolves to
+        # *zero* elements there (the test id would resolve to one).
+        #
+        # Every assertion below is "it appeared / it says X", which expect()
+        # retries into, so that is fine. But it means the locator cannot tell
+        # "hidden" apart from "deleted": to assert that no error is shown,
+        # write expect(dashboard.error_message).to_have_count(0) rather than
+        # relying on to_be_hidden(), which would also pass if the element were
+        # removed from the page entirely.
+        self.error_message = page.get_by_role("alert")
+
+        # Tier 3 -- no accessible name available, so tier 1 does not apply:
+        # unlabelled paragraphs, a bare text node, an unnamed container, an
+        # unnamed `row`, and SVG <rect> elements with no role at all.
+        # Still preferable to "#chart .bar" / "#stats-table tbody tr": `.bar`
+        # doubles as a *styling* class, and the row selector hard-coded the
+        # <table> structure.
         self.loading = page.get_by_test_id("loading")
-        self.error_message = page.get_by_test_id("error-message")
         self.empty_message = page.get_by_test_id("empty-message")
         self.chart_container = page.get_by_test_id("chart-container")
-        # Both located by test id rather than by "#chart .bar" / "#stats-table
-        # tbody tr": `.bar` is also a *styling* class in dashboard.html, and
-        # the row selector hard-coded the <table> structure.
         self.chart_bars = page.get_by_test_id("chart-bar")
         self.table_rows = page.get_by_test_id("stats-row")
         self.total = page.get_by_test_id("total-value")
-        self.refresh_btn = page.get_by_test_id("refresh")
-        self.logout_btn = page.get_by_test_id("logout")
 
     # --- actions -----------------------------------------------------------
 

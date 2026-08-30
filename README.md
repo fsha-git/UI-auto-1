@@ -15,14 +15,47 @@ Minimal UI automation framework with a local demo page as the test target.
 - `scripts/triage.py` — runs `tests/test_demo.py` against every `web/bugs/*.html` and reports which test(s) catch each bug
 - `scripts/js_coverage.py` — CDP-based V8 precise-coverage collector + colored HTML report generator for the inline JS in `web/*.html`
 
-## Locators: semantic first, never structural
-Every element under test carries a `data-testid`, and page objects locate by
-`get_by_test_id` / `get_by_role` / `get_by_label` — never by a CSS selector
-that encodes DOM structure or styling. The three that used to (`#chart .bar`,
+## Locators: strict priority ladder
+Every locator in `pages/` takes the **highest tier available for that
+element**, and says in a comment when it has to fall back. The ladder is
+defined once, in `pages/base_page.py`:
+
+| Tier | Locator | Current use |
+|---|---|---|
+| 1 | role + accessible name — `get_by_role("button", name="Add")` | 13 |
+| 2 | label / placeholder — `get_by_label` / `get_by_placeholder` | 0 |
+| 3 | test id — `get_by_test_id` (a purpose-built anchor) | 9 |
+| 4 | CSS / XPath — `locator(...)` | 1 |
+
+Tiers 1–2 target what a user or a screen reader actually perceives, so the
+tests double as a check that the UI is reachable. **Tier 1 requires a
+*name*.** An element with a role but no accessible name — an unlabelled
+`<ul>` (`list`), a `<tr>` (`row`), a decorative `<div>` — does not qualify and
+correctly falls through to its test id. That is what the nine tier-3 locators
+are: measured absences of an accessible name, not oversights.
+
+The single tier-4 locator is `DemoPage.injected_script_count()`, which looks
+for a `<script>` tag. There the tag name *is* the contract being asserted.
+
+Two things worth knowing:
+
+- **Tier 1 binds tests to visible copy.** Renaming a button breaks them. That
+  is the deliberate cost of testing what users perceive. `data-testid`
+  attributes are kept in the HTML throughout as the tier-3 anchor to drop back
+  to if the semantics ever regress.
+- **`DashboardPage.error_message` is tier 1 with a caveat.** That paragraph is
+  `display:none` until a request fails, so it is absent from the accessibility
+  tree in the default and success states and `get_by_role("alert")` resolves
+  to *zero* elements there. Every current assertion is "it appeared / it says
+  X", which `expect()` retries into. But to assert that no error is shown, use
+  `to_have_count(0)` — `to_be_hidden()` would also pass if the element were
+  deleted outright.
+
+Structural CSS selectors are gone. The three that existed (`#chart .bar`,
 `#stats-table tbody tr`, `#todo-list li`) each broke on a change that left
 behaviour intact: `.bar` doubles as a *styling* class, and the other two
 hard-coded the `<table>` / `<ul><li>` shape. Todo items are now located by
-ARIA role (`listitem`) so wrapping them in a different element still works.
+ARIA `listitem` role, so wrapping them in a different element still works.
 
 `data-value` on the chart bars is a deliberate, documented **test contract**
 (see the comment in `web/dashboard.html`): a chart re-implementation must keep
