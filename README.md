@@ -8,7 +8,7 @@
 ## 快速开始
 
 ```bash
-cd /Users/shafelix/mywork2/UI_auto_1
+git clone <本仓库地址> && cd UI_auto_1   # 已有本地副本可直接 cd 进仓库根目录
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium
@@ -69,20 +69,29 @@ pytest --demo-html web/bugs/bug_add_dedupes_items.html
 ```bash
 playwright show-trace test-results/<用例目录>/trace.zip   # 逐帧看 DOM/网络/console
 playwright show-report                                     # 打开 Playwright 自带报告
+
+# codegen 需要先手动起一个服务监听该端口（pytest 自己的 demo_server fixture
+# 用的是随机端口，起不来给 codegen 用）：
+python -m server --port 8000
 playwright codegen http://localhost:8000/demo.html         # 录制生成测试代码
 ```
 
 ## 测试报告
 
-一次 `pytest` 运行会同时产出以下报告，全部在 `reports/` 下（已 gitignore）：
+**每次 `pytest` 运行自动产出**（无需额外参数，`reports/` 已 gitignore）：
+
+| 报告 | 路径 | 说明 |
+|---|---|---|
+| Python 覆盖率（`server/` + `pages/`） | `reports/coverage-py/index.html` | 默认开启，见 `pytest.ini` 的 `addopts` |
+| 前端 JS 染色（`web/*.html` 内联脚本） | `reports/coverage-js/index.html` | 每次 `pytest` 自动采集，详见 [`COVERAGE.md`](COVERAGE.md) |
+
+**需要显式加参数 / 单独运行脚本才会产出**：
 
 | 报告 | 路径 | 如何生成 |
 |---|---|---|
 | HTML 测试报告（含失败截图） | `reports/report.html` | `pytest --html=reports/report.html --self-contained-html` |
-| Python 覆盖率（`server/` + `pages/`） | `reports/coverage-py/index.html` | 默认开启，见 `pytest.ini` 的 `addopts` |
-| 前端 JS 染色（`web/*.html` 内联脚本） | `reports/coverage-js/index.html` | 每次 `pytest` 自动采集，详见 [`COVERAGE.md`](COVERAGE.md) |
-| 变异测试报告 | [`TRIAGE.md`](TRIAGE.md) | `python scripts/triage.py --write TRIAGE.md` |
-| 性能测试趋势看板 | `reports/jmeter/perf_dashboard.html` | `perf/run_perf.sh` 结束时自动生成，详见 [`PERFORMANCE.md`](PERFORMANCE.md) |
+| 变异测试报告 | [`TRIAGE.md`](TRIAGE.md)（仓库根目录，不在 `reports/` 下） | `python scripts/triage.py --write TRIAGE.md` |
+| 性能测试趋势看板 | `reports/jmeter/perf_dashboard.html` | 单独跑 `perf/run_perf.sh`（JMeter 场景，不随 `pytest` 触发）结束时自动生成，详见 [`PERFORMANCE.md`](PERFORMANCE.md) |
 
 生成带截图的完整 HTML 报告：
 

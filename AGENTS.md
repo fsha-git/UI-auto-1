@@ -48,6 +48,9 @@ That is expected; they only need to support `tests/test_demo.py`.
 
 Defined once, in `pages/base_page.py`. Every locator takes the **highest tier
 actually available for that element**, and says in a comment when it falls back.
+See [`LOCATORS.md`](LOCATORS.md) for the fuller write-up (rationale, the two
+documented traps, and how this ties into the copy catalogue in §4) — the rules
+below are the enforceable summary.
 
 | Tier | Locator |
 |---|---|
