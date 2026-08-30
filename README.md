@@ -1,165 +1,165 @@
-# UI Automation MVP (Playwright + Pytest)
+# UI 自动化测试框架（Playwright + Pytest）
 
-Minimal UI automation framework with a local demo page as the test target.
+一个以本地静态 Demo 站点为被测对象的完整 UI 自动化框架：登录、待办列表、数据看板
+（图表/表格）三个页面，配一个真实的 Python 后端，覆盖功能测试、Mock 测试、
+国际化测试、变异测试（mutation testing）、代码覆盖率染色，以及基于 JMeter 的
+六类负载/性能测试。演示账号：`demo` / `demo123`。
 
-## Structure
-- `web/login.html` — login page (demo credentials: `demo` / `demo123`)
-- `web/demo.html` — main demo page (to-do list, checkbox, counter), gated behind login
-- `web/dashboard.html` — mock-data visualization page (bar chart + table + total), gated behind login; fetches `GET /api/stats`
-- `web/bugs/` — mutated copies of `demo.html`, each with one injected defect, used for test triage
-- `server/app.py` — demo backend (static files + `/api/*` JSON endpoints: login, stats, todos CRUD), mounted in-process by the test server fixture
-- `pages/base_page.py` — shared page-object plumbing (navigation, session-token access, locator policy)
-- `pages/i18n.py`, `web/i18n/` — the copy catalogue read by both the pages and the tests
-- `pages/login_page.py`, `pages/demo_page.py`, `pages/dashboard_page.py` — Page Objects
-- `perf/` — JMeter load/stress/step-load/spike/soak/concurrency plans, threshold gate, and cross-run trend dashboard (see [`PERFORMANCE.md`](PERFORMANCE.md))
-- `tests/` — pytest tests using `pytest-playwright` fixtures; `tests/test_api.py` are pure API tests via Playwright's `APIRequestContext` (no browser)
-- `scripts/triage.py` — runs `tests/test_demo.py` against every `web/bugs/*.html` and reports which test(s) catch each bug
-- `scripts/js_coverage.py` — CDP-based V8 precise-coverage collector + colored HTML report generator for the inline JS in `web/*.html`
+## 快速开始
 
-## Locators: strict priority ladder
-Every locator in `pages/` takes the **highest tier available for that
-element**, and says in a comment when it has to fall back. The ladder is
-defined once, in `pages/base_page.py`:
-
-| Tier | Locator | Current use |
-|---|---|---|
-| 1 | role + accessible name — `get_by_role("button", name="Add")` | 13 |
-| 2 | label / placeholder — `get_by_label` / `get_by_placeholder` | 0 |
-| 3 | test id — `get_by_test_id` (a purpose-built anchor) | 9 |
-| 4 | CSS / XPath — `locator(...)` | 1 |
-
-Tiers 1–2 target what a user or a screen reader actually perceives, so the
-tests double as a check that the UI is reachable. **Tier 1 requires a
-*name*.** An element with a role but no accessible name — an unlabelled
-`<ul>` (`list`), a `<tr>` (`row`), a decorative `<div>` — does not qualify and
-correctly falls through to its test id. That is what the nine tier-3 locators
-are: measured absences of an accessible name, not oversights.
-
-The single tier-4 locator is `DemoPage.injected_script_count()`, which looks
-for a `<script>` tag. There the tag name *is* the contract being asserted.
-
-Two things worth knowing:
-
-- **Tier 1 binds tests to visible copy**, so the copy lives in exactly one
-  place — see the next section. `data-testid` attributes are kept in the HTML
-  throughout as the tier-3 anchor to drop back to if the semantics ever
-  regress.
-- **`DashboardPage.error_message` is tier 1 with a caveat.** That paragraph is
-  `display:none` until a request fails, so it is absent from the accessibility
-  tree in the default and success states and `get_by_role("alert")` resolves
-  to *zero* elements there. Every current assertion is "it appeared / it says
-  X", which `expect()` retries into. But to assert that no error is shown, use
-  `to_have_count(0)` — `to_be_hidden()` would also pass if the element were
-  deleted outright.
-
-Structural CSS selectors are gone. The three that existed (`#chart .bar`,
-`#stats-table tbody tr`, `#todo-list li`) each broke on a change that left
-behaviour intact: `.bar` doubles as a *styling* class, and the other two
-hard-coded the `<table>` / `<ul><li>` shape. Todo items are now located by
-ARIA `listitem` role, so wrapping them in a different element still works.
-
-`data-value` on the chart bars is a deliberate, documented **test contract**
-(see the comment in `web/dashboard.html`): a chart re-implementation must keep
-it, but is otherwise free to change how it renders.
-
-## Copy: one catalogue, read by both sides
-Locators built on role + accessible name bind to visible text, which would
-normally mean a button rename silently breaks the suite. `web/i18n/catalog.js`
-removes that trap by being the single source of truth, consumed by both:
-
-- the **browser**, via `web/i18n/apply.js`, which fills every `[data-i18n]` /
-  `[data-i18n-placeholder]` element on `DOMContentLoaded`
-- the **tests**, via `pages/i18n.py`, which parses the same file
-
-Page objects never spell a name out — they ask for a key:
-
-```python
-self.add_btn = page.get_by_role("button", name=t("addTodo", locale))
-```
-
-Renaming a button is then one edit. `tests/test_i18n.py` proves this rather
-than asserting it: the same page objects drive the same interactions against
-every locale in the catalogue (currently `en` and `zh`), with nothing but
-`window.__locale` changing. A parity test keeps the key sets aligned, and
-another checks that no two locales share a translation — otherwise a locale
-that was added but never actually translated would let the suite pass while
-proving nothing.
-
-The catalogue is a `.js` file rather than `.json` so pages can load it with a
-plain `<script>` tag: no `fetch`, so no window in which a role+name locator
-could run before the text is applied. Its object literal is strict JSON, which
-is what lets `pages/i18n.py` read it without duplicating data or adding a
-build step. `t()` raises on an unknown key or locale rather than falling back,
-since a silent fallback would surface much later as a locator that
-mysteriously matches nothing.
-
-Scope note: only copy that a locator or assertion depends on is catalogued.
-The status-label, counter and todo-item rendering in `web/demo.html` is left
-alone on purpose — that is exactly the JS the `web/bugs/*.html` mutants
-deliberately break, and rewriting it would risk the injected defects the
-triage suite relies on.
-
-## Assertions: web-first `expect()` only
-Tests assert with Playwright's `expect(...)`, which retries until the
-assertion passes or times out. Snapshot reads (`text_content()`,
-`is_visible()`, `count()`) do not retry and are the classic source of
-"passes locally, fails on CI" — e.g. reading an error message the instant a
-click returns, before the submit handler has written it.
-
-Page objects therefore expose `Locator` attributes rather than resolved
-values. Two knobs keep the layers consistent:
-
-- `expect.set_options(timeout=5000)` in `conftest.py` — the retry window.
-- `timeout = 60` in `pytest.ini` — pytest-timeout as a *hang guard only*. It
-  used to be `3`, which both caused flakes on slower machines and would have
-  silently defeated `expect()` by killing tests inside its retry window.
-
-`--reruns 2` is configured as a safety net, not a fix: a test that only passes
-on rerun should be treated as a defect, not as green.
-
-## Auth: login once, reuse across all tests
-The pages are served over local HTTP (via a session-scoped `demo_server` fixture in `tests/conftest.py`, since cookies/localStorage need a real origin — `file://` URLs don't support this reliably).
-
-A session-scoped `storage_state_path` fixture logs in **once** at the start of the test run and saves the resulting storage state (cookies + localStorage) to `.auth/state.json`. That state is injected into every test's browser context via `browser_context_args`, so the `demo_page` fixture used by ordinary tests starts already authenticated — no test logs in itself.
-
-Tests that need to exercise the login flow (or an unauthenticated state) use the `fresh_page` / `login_page` fixtures instead, which spin up a separate browser context without the shared storage state. See `tests/test_login.py`.
-
-## Mock visualization: network mocking with Playwright's `page.route()`
-`dashboard.html` fetches `GET /api/stats` and renders the response as a bar chart, a table, and a total. By default the local test server (`DemoRequestHandler` in `tests/conftest.py`) answers that endpoint with a canned JSON payload, so the page works standalone with no mocking at all.
-
-`tests/test_dashboard.py` shows the other side of that: tests call `page.route("**/api/stats", ...)` *before* navigating to intercept the request and substitute controlled data, which is how the empty-state, error-state, and multi-response refresh scenarios are exercised without needing a real backend to produce those conditions on demand.
-
-See [`MOCK_TESTS.md`](MOCK_TESTS.md) (Chinese) for a scenario-by-scenario breakdown of every mock test in `test_dashboard.py`.
-
-## Test accounts
-The functional suite uses the `demo` account. Load tests use their own
-accounts from `perf/accounts.csv` and never share an identity with it — the
-server partitions todos per account, so one account can neither read nor
-delete another's (`tests/test_api.py` pins this). Sharing a single identity
-made per-user isolation structurally untestable.
-
-## Setup
 ```bash
-cd /Users/shafelix/mywork2/UI_auto_1
+git clone <本仓库地址> && cd UI_auto_1   # 已有本地副本可直接 cd 进仓库根目录
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium
 ```
 
-## Run tests
+跑一次全量测试确认环境搭好了：
+
 ```bash
 pytest
 ```
 
-Run headed (visible browser) to watch the interactions:
+## 项目结构
+
+| 路径 | 说明 |
+|---|---|
+| `web/login.html` | 登录页 |
+| `web/demo.html` | 主 Demo 页（待办列表 / 复选框 / 计数器），需登录后访问 |
+| `web/dashboard.html` | 数据看板页（柱状图 + 表格 + 合计），需登录，拉取 `GET /api/stats` |
+| `web/bugs/*.html` | `demo.html` 的 11 个冻结变异体，每个注入一个缺陷，用于变异测试 |
+| `web/i18n/` | 前端读取的文案目录（`catalog.js`）与应用脚本（`apply.js`） |
+| `server/app.py` | Demo 后端（静态文件 + `/api/*` JSON 接口：登录、看板数据、待办 CRUD） |
+| `pages/base_page.py` | Page Object 公共基础设施（导航、session token、定位器策略） |
+| `pages/i18n.py` | 测试端读取的文案目录解析器（对应 `web/i18n/catalog.js`） |
+| `pages/login_page.py`、`pages/demo_page.py`、`pages/dashboard_page.py` | 三个页面的 Page Object |
+| `tests/` | pytest 测试；`tests/test_api.py` 是纯 API 测试（不启动浏览器） |
+| `scripts/triage.py` | 用 `tests/test_demo.py` 逐一跑 `web/bugs/*.html`，统计每个缺陷被哪些测试捕获 |
+| `scripts/js_coverage.py` | 基于 CDP 的 V8 精确覆盖率采集器，生成前端内联 JS 的染色报告 |
+| `perf/` | JMeter 负载/压力/阶梯/尖峰/长稳/并发测试计划、回归门禁、跨运行趋势看板 |
+| `reports/` | 各类测试报告输出目录（已 gitignore，见下文） |
+
+## 运行测试
+
 ```bash
-pytest --headed
+pytest                              # 全量测试（默认对象：web/demo.html）
+pytest --headed                     # 有头模式，观察浏览器实际交互
+pytest tests/test_demo.py           # 只跑某个测试文件
+pytest -k "checkbox"                # 按用例名关键字过滤
+pytest -m "not perf"                # 跳过前端渲染性能护栏（迭代时更快）
+pytest tests/test_frontend_perf.py -v   # 只跑前端渲染性能护栏
 ```
 
-## Coverage ("code staining")
-Every `pytest` run instruments both sides of the stack and writes two visual HTML reports:
+只跑某一类测试：
 
-- **Python** (backend `server/` + Page Objects `pages/`) via pytest-cov → terminal summary plus `reports/coverage-py/index.html`
-- **Front-end inline JS** in `web/*.html` via CDP / V8 precise coverage, collected during the UI tests and merged across the session → `reports/coverage-js/index.html` (green = executed, red = never executed)
+```bash
+pytest tests/test_api.py            # 纯 API 测试，不启动浏览器
+pytest tests/test_dashboard.py -v   # 数据看板的 Mock 测试（见 MOCK_TESTS.md）
+pytest tests/test_i18n.py           # 中英文两个 locale 的全量交互回归
+```
 
-See [`COVERAGE.md`](COVERAGE.md) (Chinese) for how the API tests and both coverage pipelines work.
+用 `--demo-html` 把套件指向某个注入了缺陷的变异体，而不是默认的 `web/demo.html`：
+
+```bash
+pytest --demo-html web/bugs/bug_add_dedupes_items.html
+```
+
+调试单个失败用例：
+
+```bash
+playwright show-trace test-results/<用例目录>/trace.zip   # 逐帧看 DOM/网络/console
+playwright show-report                                     # 打开 Playwright 自带报告
+
+# codegen 需要先手动起一个服务监听该端口（pytest 自己的 demo_server fixture
+# 用的是随机端口，起不来给 codegen 用）：
+python -m server --port 8000
+playwright codegen http://localhost:8000/demo.html         # 录制生成测试代码
+```
+
+## 测试报告
+
+**每次 `pytest` 运行自动产出**（无需额外参数，`reports/` 已 gitignore）：
+
+| 报告 | 路径 | 说明 |
+|---|---|---|
+| Python 覆盖率（`server/` + `pages/`） | `reports/coverage-py/index.html` | 默认开启，见 `pytest.ini` 的 `addopts` |
+| 前端 JS 染色（`web/*.html` 内联脚本） | `reports/coverage-js/index.html` | 每次 `pytest` 自动采集，详见 [`COVERAGE.md`](COVERAGE.md) |
+
+**需要显式加参数 / 单独运行脚本才会产出**：
+
+| 报告 | 路径 | 如何生成 |
+|---|---|---|
+| HTML 测试报告（含失败截图） | `reports/report.html` | `pytest --html=reports/report.html --self-contained-html` |
+| 变异测试报告 | [`TRIAGE.md`](TRIAGE.md)（仓库根目录，不在 `reports/` 下） | `python scripts/triage.py --write TRIAGE.md` |
+| 性能测试趋势看板 | `reports/jmeter/perf_dashboard.html` | 单独跑 `perf/run_perf.sh`（JMeter 场景，不随 `pytest` 触发）结束时自动生成，详见 [`PERFORMANCE.md`](PERFORMANCE.md) |
+
+生成带截图的完整 HTML 报告：
+
+```bash
+pytest --html=reports/report.html --self-contained-html
+```
+
+`--demo-html` 和 `--html` 可以组合使用，用于导出某个变异体触发失败时的报告：
+
+```bash
+pytest --demo-html web/bugs/bug_add_dedupes_items.html \
+       --html=reports/report.html --self-contained-html
+```
+
+`reports/coverage-py/index.html` 和 `reports/coverage-js/index.html` 是逐行染色
+的源码视图（绿色 = 执行过，红色 = 从未执行），可直接用浏览器打开
+（`file://` 即可）。
+
+## 核心脚本
+
+- **`scripts/triage.py`** — 变异测试的核心：对 `web/bugs/` 下每一个变异体跑一遍
+  `tests/test_demo.py`，记录哪些用例捕获了哪个缺陷。改动共享标记（Page Object /
+  定位器 / 文案）后必须重新生成并 diff：
+
+  ```bash
+  python scripts/triage.py --write /tmp/TRIAGE_new.md
+  diff TRIAGE.md /tmp/TRIAGE_new.md   # 非空 diff 意味着测试的缺陷检出能力被削弱了
+  ```
+
+- **`scripts/js_coverage.py`** — 前端 JS 染色采集器，由 `tests/conftest.py` 的
+  `js_coverage` fixture 在每个 UI 测试里自动调用，无需手动运行。
+
+- **`perf/run_perf.sh`** — 一键运行 JMeter 负载/性能测试：
+
+  ```bash
+  perf/run_perf.sh all            # performance / stress / stepload / spike / concurrency
+  perf/run_perf.sh performance    # 只跑基线性能
+  perf/run_perf.sh soak           # 长稳测试（默认 30 分钟，不含在 all 里）
+  ```
+
+  详见 [`PERFORMANCE.md`](PERFORMANCE.md)，含账号隔离、六类场景说明、回归门禁、
+  趋势看板用法。
+
+## 设计要点（速览）
+
+以下几点是理解这套框架时最容易踩坑的地方，完整说明见各自的文档：
+
+- **定位器优先级**：role + 可访问名称 优先，逐级降级到 test id / CSS。
+  详见 [`LOCATORS.md`](LOCATORS.md)。
+- **断言只用 `expect()`**：所有断言走 Playwright 的 web-first `expect()`（会
+  重试），禁止对 `text_content()` / `is_visible()` 等一次性快照结果做断言。
+- **登录一次，全程复用**：会话级 fixture 登录一次并保存 `storage_state` 到
+  `.auth/state.json`，普通测试直接复用；需要跑登录流程本身的测试用
+  `fresh_page` / `login_page`。
+- **看板数据用 `page.route()` 做网络 Mock**：`dashboard.html` 默认由本地服务
+  器返回固定数据，Mock 测试在导航前拦截 `/api/stats` 来构造空数据、报错、加
+  载中等场景，详见 [`MOCK_TESTS.md`](MOCK_TESTS.md)。
+- **压测账号与功能测试账号严格隔离**：功能测试用 `demo` 账号，压测用
+  `perf/accounts.csv` 里独立的 50 个账号，后端按账号分区存储，详见
+  [`PERFORMANCE.md`](PERFORMANCE.md)。
+
+## 相关文档
+
+| 文档 | 内容 |
+|---|---|
+| [`AGENTS.md`](AGENTS.md) | 面向改动者的强制规范：定位器、断言、变异测试不可回归、压测账号隔离等六条约定，以及提交前必须跑的验证清单 |
+| [`LOCATORS.md`](LOCATORS.md) | 定位器优先级策略详解，及其与文案目录的关系 |
+| [`COVERAGE.md`](COVERAGE.md) | API 测试清单、Python 覆盖率与前端 JS 染色两条流水线的原理 |
+| [`MOCK_TESTS.md`](MOCK_TESTS.md) | `tests/test_dashboard.py` 逐个 Mock 测试场景说明 |
+| [`PERFORMANCE.md`](PERFORMANCE.md) | JMeter 六类场景、账号隔离、回归门禁、趋势看板、结果有效性边界 |
+| [`TRIAGE.md`](TRIAGE.md) | `scripts/triage.py` 生成的变异测试检出报告 |
