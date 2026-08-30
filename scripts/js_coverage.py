@@ -95,12 +95,15 @@ class JsCoverageCollector:
 
         So the coverage entries are resolved against the union of every
         session's scriptParsed metadata. Script ids are only unique within
-        one isolate, so a cross-session lookup also requires the entry's and
-        the metadata's URLs to agree before it is trusted.
+        one isolate, so the union is keyed by (scriptId, url) — two isolates
+        reusing an id for different scripts stay distinct entries instead of
+        overwriting each other, and a lookup only matches metadata whose URL
+        agrees with the coverage entry's.
         """
-        combined_meta: dict[str, dict] = {}
+        combined_meta: dict[tuple[str, str], dict] = {}
         for _, parsed in sessions:
-            combined_meta.update(parsed)
+            for script_id, meta in parsed.items():
+                combined_meta[(script_id, meta.get("url", ""))] = meta
 
         for session in sessions:
             cdp, parsed = session
@@ -111,8 +114,8 @@ class JsCoverageCollector:
             for entry in result.get("result", []):
                 meta = parsed.get(entry["scriptId"])
                 if meta is None:
-                    meta = combined_meta.get(entry["scriptId"])
-                    if meta is None or meta.get("url") != entry.get("url"):
+                    meta = combined_meta.get((entry["scriptId"], entry.get("url", "")))
+                    if meta is None:
                         continue
                 record = self._record_for(meta)
                 if record is None:

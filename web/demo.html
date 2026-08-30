@@ -53,7 +53,7 @@
   <section>
     <h2>Windows &amp; Tabs</h2>
     <p>
-      <a href="profile.html" target="_blank" data-testid="profile-link" data-i18n="openProfile">Open profile</a>
+      <a href="profile.html" target="_blank" rel="noopener" data-testid="profile-link" data-i18n="openProfile">Open profile</a>
       <button id="open-popup-btn" data-testid="open-popup" data-i18n="openPopup">Quick note</button>
     </p>
     <p id="popup-result" data-testid="popup-result"></p>
@@ -96,13 +96,18 @@
   </script>
 
   <script>
+    let quickNotePopup = null;
+
     document.getElementById('open-popup-btn').addEventListener('click', () => {
-      window.open('popup.html', 'quick-note', 'width=360,height=320');
+      quickNotePopup = window.open('popup.html', 'quick-note', 'width=360,height=320');
     });
 
     window.addEventListener('message', (event) => {
-      // Only accept notes from our own popup: same origin, expected shape.
+      // Only accept notes from the popup this page opened: same origin,
+      // same window handle, expected shape. Any other same-origin window
+      // sending {type:'quick-note'} is ignored.
       if (event.origin !== window.location.origin) return;
+      if (quickNotePopup === null || event.source !== quickNotePopup) return;
       if (event.data && event.data.type === 'quick-note') {
         document.getElementById('popup-result').textContent = event.data.text;
       }

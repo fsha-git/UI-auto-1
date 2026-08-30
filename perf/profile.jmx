@@ -111,7 +111,7 @@
           </hashTree>
           <LoopController guiclass="LoopControlPanel" testclass="LoopController" testname="Seed 3 Todos">
             <stringProp name="LoopController.loops">3</stringProp>
-            <boolProp name="LoopController.continue_forever">true</boolProp>
+            <boolProp name="LoopController.continue_forever">false</boolProp>
           </LoopController>
           <hashTree>
             <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /api/todos (seed)">
