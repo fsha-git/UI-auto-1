@@ -17,18 +17,21 @@
   button { padding: 6px 12px; margin-left: 6px; cursor: pointer; }
   #todo-list li { padding: 2px 0; }
 </style>
+<script src="i18n/catalog.js"></script>
+<script src="i18n/apply.js"></script>
 </head>
 <body>
   <h1>UI Automation Demo Page</h1>
 
   <section>
-    <p>Logged in as <strong id="logged-in-user">demo</strong>. <button id="logout-btn" data-testid="logout">Logout</button> <a href="dashboard.html">Dashboard</a></p>
+    <p>Logged in as <strong id="logged-in-user">demo</strong>. <button id="logout-btn" data-testid="logout" data-i18n="logout">Logout</button> <a href="dashboard.html">Dashboard</a></p>
   </section>
 
   <section>
     <h2>To-Do List</h2>
-    <input type="text" id="todo-input" data-testid="todo-input" placeholder="Enter a task">
-    <button id="add-btn" data-testid="add-todo">Add</button>
+    <input type="text" id="todo-input" data-testid="todo-input"
+           data-i18n-placeholder="todoPlaceholder" placeholder="Enter a task">
+    <button id="add-btn" data-testid="add-todo" data-i18n="addTodo">Add</button>
     <ul id="todo-list" data-testid="todo-list"></ul>
   </section>
 
@@ -36,14 +39,14 @@
     <h2>Status Toggle</h2>
     <label>
       <input type="checkbox" id="status-checkbox" data-testid="status-checkbox">
-      Enable feature
+      <span data-i18n="enableFeature">Enable feature</span>
     </label>
     <p id="status-label" data-testid="status-label">Status: OFF</p>
   </section>
 
   <section>
     <h2>Counter</h2>
-    <button id="counter-btn" data-testid="counter-increment">Click me</button>
+    <button id="counter-btn" data-testid="counter-increment" data-i18n="counterIncrement">Click me</button>
     <span id="counter" data-testid="counter-value">0</span>
   </section>
 

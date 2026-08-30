@@ -3,22 +3,23 @@ import re
 from playwright.sync_api import Page, expect
 
 from pages.base_page import BasePage
+from pages.i18n import DEFAULT_LOCALE, t
 
 
 class DemoPage(BasePage):
     PATH = "demo.html"
 
-    def __init__(self, page: Page, base_url: str = ""):
-        super().__init__(page, base_url)
+    def __init__(self, page: Page, base_url: str = "", locale: str = DEFAULT_LOCALE):
+        super().__init__(page, base_url, locale)
         # Tier 1 -- role + accessible name (see the policy in base_page.py).
         # The input's name comes from its placeholder, which is the weakest
         # source of an accessible name: placeholders get reworded for UX
         # reasons more readily than button labels do.
-        self.todo_input = page.get_by_role("textbox", name="Enter a task")
-        self.add_btn = page.get_by_role("button", name="Add")
-        self.status_checkbox = page.get_by_role("checkbox", name="Enable feature")
-        self.counter_btn = page.get_by_role("button", name="Click me")
-        self.logout_btn = page.get_by_role("button", name="Logout")
+        self.todo_input = page.get_by_role("textbox", name=t("todoPlaceholder", locale))
+        self.add_btn = page.get_by_role("button", name=t("addTodo", locale))
+        self.status_checkbox = page.get_by_role("checkbox", name=t("enableFeature", locale))
+        self.counter_btn = page.get_by_role("button", name=t("counterIncrement", locale))
+        self.logout_btn = page.get_by_role("button", name=t("logout", locale))
 
         # Items are located by ARIA role, not by the `li` tag: wrapping each
         # item in a <div role="listitem"> (or swapping ul/li for a styled

@@ -21,6 +21,8 @@
   #empty-message, #loading { color: #666; }
   #total-value { font-weight: bold; }
 </style>
+<script src="i18n/catalog.js"></script>
+<script src="i18n/apply.js"></script>
 </head>
 <body>
   <h1>Mock Data Dashboard</h1>
@@ -28,7 +30,7 @@
   <section>
     <p>
       Logged in as <strong id="logged-in-user">demo</strong>.
-      <button id="logout-btn" data-testid="logout">Logout</button>
+      <button id="logout-btn" data-testid="logout" data-i18n="logout">Logout</button>
       <a href="demo.html">Back to demo</a>
     </p>
   </section>
@@ -48,7 +50,7 @@
       <p>Total: <span id="total-value" data-testid="total-value"></span></p>
     </div>
 
-    <button id="refresh-btn" data-testid="refresh">Refresh</button>
+    <button id="refresh-btn" data-testid="refresh" data-i18n="refresh">Refresh</button>
   </section>
 
   <script>

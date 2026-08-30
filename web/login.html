@@ -12,17 +12,19 @@
   #login-error { color: #b00020; margin-top: 12px; min-height: 1.2em; }
   .hint { color: #666; font-size: 12px; margin-top: 24px; }
 </style>
+<script src="i18n/catalog.js"></script>
+<script src="i18n/apply.js"></script>
 </head>
 <body>
   <h1>Login</h1>
   <form id="login-form">
-    <label for="username">Username
+    <label for="username"><span data-i18n="usernameLabel">Username</span>
       <input type="text" id="username" data-testid="username" autocomplete="username">
     </label>
-    <label for="password">Password
+    <label for="password"><span data-i18n="passwordLabel">Password</span>
       <input type="password" id="password" data-testid="password" autocomplete="current-password">
     </label>
-    <button type="submit" id="login-btn" data-testid="login-submit">Log in</button>
+    <button type="submit" id="login-btn" data-testid="login-submit" data-i18n="loginSubmit">Log in</button>
     <p id="login-error" data-testid="login-error" role="alert"></p>
   </form>
   <p class="hint">Demo credentials: demo / demo123</p>
@@ -46,7 +48,7 @@
         window.location.href = 'demo.html';
         return;
       }
-      loginError.textContent = 'Invalid username or password';
+      loginError.textContent = window.I18N.invalidCredentials;
     });
   </script>
 </body>

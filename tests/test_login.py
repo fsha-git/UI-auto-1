@@ -3,6 +3,7 @@ import re
 from playwright.sync_api import Page, expect
 
 from pages.demo_page import DemoPage
+from pages.i18n import t
 from pages.login_page import LoginPage
 
 
@@ -16,7 +17,7 @@ def test_login_with_invalid_credentials_shows_error(login_page: LoginPage, fresh
     login_page.login("demo", "wrong-password")
     # web-first: retries until the submit handler has written the message,
     # instead of snapshotting text_content() the instant the click returns.
-    expect(login_page.error_message).to_have_text("Invalid username or password")
+    expect(login_page.error_message).to_have_text(t("invalidCredentials"))
     expect(fresh_page).to_have_url(re.compile(r"/login\.html$"))
 
 

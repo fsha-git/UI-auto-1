@@ -8,7 +8,8 @@ Minimal UI automation framework with a local demo page as the test target.
 - `web/dashboard.html` — mock-data visualization page (bar chart + table + total), gated behind login; fetches `GET /api/stats`
 - `web/bugs/` — mutated copies of `demo.html`, each with one injected defect, used for test triage
 - `server/app.py` — demo backend (static files + `/api/*` JSON endpoints: login, stats, todos CRUD), mounted in-process by the test server fixture
-- `pages/base_page.py` — shared page-object plumbing (navigation, session-token access)
+- `pages/base_page.py` — shared page-object plumbing (navigation, session-token access, locator policy)
+- `pages/i18n.py`, `web/i18n/` — the copy catalogue read by both the pages and the tests
 - `pages/login_page.py`, `pages/demo_page.py`, `pages/dashboard_page.py` — Page Objects
 - `perf/` — JMeter load/stress/step-load/spike/soak/concurrency plans, threshold gate, and cross-run trend dashboard (see [`PERFORMANCE.md`](PERFORMANCE.md))
 - `tests/` — pytest tests using `pytest-playwright` fixtures; `tests/test_api.py` are pure API tests via Playwright's `APIRequestContext` (no browser)
@@ -39,10 +40,10 @@ for a `<script>` tag. There the tag name *is* the contract being asserted.
 
 Two things worth knowing:
 
-- **Tier 1 binds tests to visible copy.** Renaming a button breaks them. That
-  is the deliberate cost of testing what users perceive. `data-testid`
-  attributes are kept in the HTML throughout as the tier-3 anchor to drop back
-  to if the semantics ever regress.
+- **Tier 1 binds tests to visible copy**, so the copy lives in exactly one
+  place — see the next section. `data-testid` attributes are kept in the HTML
+  throughout as the tier-3 anchor to drop back to if the semantics ever
+  regress.
 - **`DashboardPage.error_message` is tier 1 with a caveat.** That paragraph is
   `display:none` until a request fails, so it is absent from the accessibility
   tree in the default and success states and `get_by_role("alert")` resolves
@@ -60,6 +61,43 @@ ARIA `listitem` role, so wrapping them in a different element still works.
 `data-value` on the chart bars is a deliberate, documented **test contract**
 (see the comment in `web/dashboard.html`): a chart re-implementation must keep
 it, but is otherwise free to change how it renders.
+
+## Copy: one catalogue, read by both sides
+Locators built on role + accessible name bind to visible text, which would
+normally mean a button rename silently breaks the suite. `web/i18n/catalog.js`
+removes that trap by being the single source of truth, consumed by both:
+
+- the **browser**, via `web/i18n/apply.js`, which fills every `[data-i18n]` /
+  `[data-i18n-placeholder]` element on `DOMContentLoaded`
+- the **tests**, via `pages/i18n.py`, which parses the same file
+
+Page objects never spell a name out — they ask for a key:
+
+```python
+self.add_btn = page.get_by_role("button", name=t("addTodo", locale))
+```
+
+Renaming a button is then one edit. `tests/test_i18n.py` proves this rather
+than asserting it: the same page objects drive the same interactions against
+every locale in the catalogue (currently `en` and `zh`), with nothing but
+`window.__locale` changing. A parity test keeps the key sets aligned, and
+another checks that no two locales share a translation — otherwise a locale
+that was added but never actually translated would let the suite pass while
+proving nothing.
+
+The catalogue is a `.js` file rather than `.json` so pages can load it with a
+plain `<script>` tag: no `fetch`, so no window in which a role+name locator
+could run before the text is applied. Its object literal is strict JSON, which
+is what lets `pages/i18n.py` read it without duplicating data or adding a
+build step. `t()` raises on an unknown key or locale rather than falling back,
+since a silent fallback would surface much later as a locator that
+mysteriously matches nothing.
+
+Scope note: only copy that a locator or assertion depends on is catalogued.
+The status-label, counter and todo-item rendering in `web/demo.html` is left
+alone on purpose — that is exactly the JS the `web/bugs/*.html` mutants
+deliberately break, and rewriting it would risk the injected defects the
+triage suite relies on.
 
 ## Assertions: web-first `expect()` only
 Tests assert with Playwright's `expect(...)`, which retries until the

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from playwright.sync_api import Page
 
+from pages.i18n import DEFAULT_LOCALE
+
 # ---------------------------------------------------------------------------
 # Locator policy, in strict priority order. Every locator in pages/ picks the
 # highest tier that is actually available for that element, and says so when
@@ -21,6 +23,10 @@ from playwright.sync_api import Page
 # Tier 1 requires a *name*. An element with a role but no accessible name
 # (an unlabelled <ul>, a <tr>, a decorative <div>) does not qualify, and
 # correctly falls through to its test id.
+#
+# Because tier 1 binds to visible copy, the names are never spelled out
+# here: they come from pages/i18n.py, which reads the same catalogue the
+# pages render from. Renaming a button is then one edit, not two.
 # ---------------------------------------------------------------------------
 
 # The demo app's session key. This is an *implementation detail of the app*:
@@ -43,9 +49,12 @@ class BasePage:
     #: path of this page relative to the server root, e.g. "demo.html"
     PATH: str = ""
 
-    def __init__(self, page: Page, base_url: str = ""):
+    def __init__(self, page: Page, base_url: str = "", locale: str = DEFAULT_LOCALE):
         self.page = page
         self.base_url = base_url.rstrip("/")
+        #: locale whose copy this page object's role+name locators expect;
+        #: the page renders it when the test sets window.__locale to match.
+        self.locale = locale
 
     def open(self, url: str | None = None) -> "BasePage":
         """Navigate to this page. Pass ``url`` to override (used by the

@@ -1,16 +1,17 @@
 from playwright.sync_api import Page, expect
 
 from pages.base_page import BasePage
+from pages.i18n import DEFAULT_LOCALE, t
 
 
 class DashboardPage(BasePage):
     PATH = "dashboard.html"
 
-    def __init__(self, page: Page, base_url: str = ""):
-        super().__init__(page, base_url)
+    def __init__(self, page: Page, base_url: str = "", locale: str = DEFAULT_LOCALE):
+        super().__init__(page, base_url, locale)
         # Tier 1 -- role + accessible name (see the policy in base_page.py).
-        self.refresh_btn = page.get_by_role("button", name="Refresh")
-        self.logout_btn = page.get_by_role("button", name="Logout")
+        self.refresh_btn = page.get_by_role("button", name=t("refresh", locale))
+        self.logout_btn = page.get_by_role("button", name=t("logout", locale))
 
         # Tier 1, with a caveat worth knowing. This paragraph is display:none
         # until a request fails, so it is absent from the accessibility tree
