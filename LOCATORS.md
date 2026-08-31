@@ -54,9 +54,10 @@ name 的元素——没有 label 的 `<ul>`（role 是 `list`）、`<tr>`（role
 （`data-series` / `data-index` / `data-value` / `data-px` / `data-py`），并在
 tooltip 和 canvas 元素上发布 `data-*` 状态（`data-series-count` /
 `data-generation`）。这些属性同样是注释写明的测试契约。另外
-`DemoPage.expect_tooltip_hidden()` 用 `to_be_hidden()` 是合法的——tooltip 元
-素**始终存在于 DOM 里**，只靠 `hidden` 属性切换，不会出现上面
-`role=alert` 那种"元素被整个删除时也通过"的陷阱。
+`DemoPage.expect_tooltip_hidden()` 先断言 `to_have_count(1)` 再断言
+`to_be_hidden()`——tooltip 元素设计上**始终存在于 DOM 里**，只靠 `hidden`
+属性切换，但 `to_be_hidden()` 单用在元素被整个删除时同样会通过（正是上面
+`role=alert` 的那个陷阱），count 检查把"隐藏"钉死为"还在 DOM 里且不可见"。
 
 ## 与文案目录（`web/i18n/catalog.js`）的关系
 

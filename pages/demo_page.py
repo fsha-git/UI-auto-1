@@ -103,10 +103,14 @@ class DemoPage(BasePage):
         return self.page.locator(f'[data-testid="chart-point"][data-series="{series_key}"]')
 
     def hover_chart_point(self, series_key: str, index: int) -> None:
-        """Move the mouse onto a plotted point. The coordinates are snapshot
-        reads used as action input (like the white-box probes below), not
-        assertions; hover(position=...) then waits for actionability itself."""
+        """Move the mouse onto a plotted point. The web-first expects retry
+        until the mirror node exists with numeric coordinates (and fail
+        cleanly if a mutant never writes them); only then are the values
+        snapshot-read as action input, and hover(position=...) waits for
+        actionability itself."""
         point = self.chart_point(series_key, index)
+        expect(point).to_have_attribute("data-px", re.compile(r"^\d+$"))
+        expect(point).to_have_attribute("data-py", re.compile(r"^\d+$"))
         x = float(point.get_attribute("data-px"))
         y = float(point.get_attribute("data-py"))
         self.chart_canvas.hover(position={"x": x, "y": y})
@@ -148,9 +152,12 @@ class DemoPage(BasePage):
 
     def expect_tooltip_for(self, series_key: str, index: int) -> None:
         """Assert the tooltip is showing exactly the hovered point. The
-        expected value comes from the point's mirror node, so a chart whose
-        tooltip renders a different number than it plotted still fails."""
-        expected = self.chart_point(series_key, index).get_attribute("data-value")
+        expected value comes from the point's mirror node — retried into
+        existence first, then snapshot-read — so a chart whose tooltip
+        renders a different number than it plotted still fails."""
+        point = self.chart_point(series_key, index)
+        expect(point).to_have_attribute("data-value", re.compile(r"^\d+$"))
+        expected = point.get_attribute("data-value")
         expect(self.chart_tooltip).to_be_visible()
         expect(self.chart_tooltip).to_have_attribute("data-series", series_key)
         expect(self.chart_tooltip).to_have_attribute("data-index", str(index))
@@ -158,9 +165,11 @@ class DemoPage(BasePage):
         expect(self.chart_tooltip).to_contain_text(expected)
 
     def expect_tooltip_hidden(self) -> None:
-        """to_be_hidden() is safe here, unlike on elements that only exist in
-        one state: the tooltip element is always in the DOM, so "hidden"
-        cannot be confused with "not rendered yet"."""
+        """The count check makes "hidden" mean what it says: to_be_hidden()
+        alone also passes when the locator matches nothing (the same caveat
+        as role=alert, see pages/dashboard_page.py), so first pin down that
+        the tooltip element is still in the DOM."""
+        expect(self.chart_tooltip).to_have_count(1)
         expect(self.chart_tooltip).to_be_hidden()
 
     def expect_visible_series_count(self, count: int) -> None:
