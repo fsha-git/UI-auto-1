@@ -5,19 +5,23 @@
 
 | 档位 | 定位方式 | 当前用量 |
 |---|---|---|
-| 1 | role + 可访问名称 — `get_by_role("button", name="Add")` | 19 |
+| 1 | role + 可访问名称 — `get_by_role("button", name="Add")` | 23 |
 | 2 | label / placeholder — `get_by_label` / `get_by_placeholder` | 0 |
-| 3 | test id — `get_by_test_id`（专门埋的锚点） | 13 |
-| 4 | CSS / XPath — `locator(...)` | 1 |
+| 3 | test id — `get_by_test_id`（专门埋的锚点） | 16 |
+| 4 | CSS / XPath — `locator(...)` | 3 |
 
 档位 1–2 定位的是用户或屏幕阅读器实际感知到的内容，所以这些测试同时也在验证
 UI 的可访问性。**档位 1 必须要有可访问名称。** 一个有 role 但没有 accessible
 name 的元素——没有 label 的 `<ul>`（role 是 `list`）、`<tr>`（role 是
 `row`）、纯装饰性的 `<div>`——不满足档位 1，会正确地降级到 test id。仓库里那
-13 个档位 3 的定位器，都是"确实没有可访问名称"的结果，不是遗漏。
+16 个档位 3 的定位器，都是"确实没有可访问名称"的结果，不是遗漏。
 
-唯一的档位 4 定位器是 `DemoPage.injected_script_count()`，它查找的是一个
-`<script>` 标签——这里被断言的契约本身就是"标签名"，所以只能用结构选择器。
+档位 4 定位器只有三个，各自的契约都不是 DOM 结构：
+`DemoPage.injected_script_count()` 查找的是一个 `<script>` 标签——被断言的契
+约本身就是"标签名"；`DemoPage.chart_point()` / `chart_series_points()` 用的
+是 `[data-testid="chart-point"][data-series=…][data-index=…]` 这样的**属性组
+合**——趋势图的隐藏数据镜像节点没有 role 也没有名称，且这些 `data-*` 属性本
+身就是写进 `web/demo.html` 注释里的测试契约（见下文）。
 
 **不要凭记忆猜测 ARIA role——去实测。** Chromium 的可访问性树计算结果才是权
 威，这里已经出现过一次和"背记忆答案"矛盾的情况：`<input type="password">`
@@ -45,6 +49,14 @@ name 的元素——没有 label 的 `<ul>`（role 是 `list`）、`<tr>`（role
 
 `web/dashboard.html` 图表柱子上的 `data-value` 是一个刻意保留、并在代码注释
 里写明的**测试契约**：图表重新实现时必须保留它，但渲染方式本身可以随便改。
+`web/demo.html` 的趋势图（Canvas）把同样的思路推广了一步：Canvas 像素无法被
+定位器查询，所以图表把每个绘制点镜像成 `#chart-data` 下的隐藏节点
+（`data-series` / `data-index` / `data-value` / `data-px` / `data-py`），并在
+tooltip 和 canvas 元素上发布 `data-*` 状态（`data-series-count` /
+`data-generation`）。这些属性同样是注释写明的测试契约。另外
+`DemoPage.expect_tooltip_hidden()` 用 `to_be_hidden()` 是合法的——tooltip 元
+素**始终存在于 DOM 里**，只靠 `hidden` 属性切换，不会出现上面
+`role=alert` 那种"元素被整个删除时也通过"的陷阱。
 
 ## 与文案目录（`web/i18n/catalog.js`）的关系
 

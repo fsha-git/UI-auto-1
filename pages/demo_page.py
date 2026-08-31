@@ -38,6 +38,19 @@ class DemoPage(BasePage):
         self.counter = page.get_by_test_id("counter-value")
         self.popup_result = page.get_by_test_id("popup-result")
 
+        # --- trend chart ---------------------------------------------------
+        # Tier 1 -- the canvas has role="img" and the chart script sets its
+        # aria-label from the same catalog the tests read.
+        self.chart_canvas = page.get_by_role("img", name=t("chartTrend", locale))
+        self.chart_regenerate_btn = page.get_by_role("button", name=t("chartRegenerate", locale))
+        # Tier 3 -- the tooltip/legend are unnamed divs/paragraphs, and the
+        # mirror points are hidden <li>s with no accessible name.
+        self.chart_tooltip = page.get_by_test_id("chart-tooltip")
+        self.chart_legend = page.get_by_test_id("chart-legend")
+        self.chart_points = page.get_by_test_id("chart-point")
+        # Tier 1, scoped -- each checkbox is named by its wrapping label.
+        self.chart_legend_toggles = self.chart_legend.get_by_role("checkbox")
+
     # --- actions -----------------------------------------------------------
 
     def add_todo(self, text: str) -> None:
@@ -72,6 +85,46 @@ class DemoPage(BasePage):
             self.open_popup_btn.click()
         return PopupPage(popup_info.value, self.base_url, self.locale)
 
+    # --- trend chart actions ------------------------------------------------
+    # Canvas pixels are opaque to locators, so all the geometry plumbing lives
+    # here, against the data mirror contract documented in web/demo.html:
+    # every plotted point has a hidden node carrying data-series/-index/-value
+    # and its CSS-pixel canvas position in data-px/-py.
+
+    def chart_point(self, series_key: str, index: int):
+        """Mirror node for one plotted point. Tier 4 by necessity: hidden
+        <li>s have no role or name, and the composite is on the documented
+        data-* contract, not on DOM structure."""
+        return self.page.locator(
+            f'[data-testid="chart-point"][data-series="{series_key}"][data-index="{index}"]'
+        )
+
+    def chart_series_points(self, series_key: str):
+        return self.page.locator(f'[data-testid="chart-point"][data-series="{series_key}"]')
+
+    def hover_chart_point(self, series_key: str, index: int) -> None:
+        """Move the mouse onto a plotted point. The coordinates are snapshot
+        reads used as action input (like the white-box probes below), not
+        assertions; hover(position=...) then waits for actionability itself."""
+        point = self.chart_point(series_key, index)
+        x = float(point.get_attribute("data-px"))
+        y = float(point.get_attribute("data-py"))
+        self.chart_canvas.hover(position={"x": x, "y": y})
+
+    def leave_chart(self) -> None:
+        """Park the mouse off the canvas. The target is deliberately inside
+        the chart section so this also works on the stripped bug_chart_*
+        mutant pages, which carry no other sections."""
+        self.chart_regenerate_btn.hover()
+
+    def toggle_series(self, series_key: str) -> None:
+        # Tier 1: the series key IS its catalog key, so the checkbox's
+        # accessible name (its wrapping label's text) comes straight from t().
+        self.chart_legend.get_by_role("checkbox", name=t(series_key, self.locale)).click()
+
+    def regenerate_chart(self) -> None:
+        self.chart_regenerate_btn.click()
+
     # --- assertion helpers -------------------------------------------------
     # These live in the page object (not the test) because they encapsulate
     # *how* the app expresses a piece of state. They stay web-first: every
@@ -92,6 +145,37 @@ class DemoPage(BasePage):
         """Assert the note text the quick-note popup posted back. Web-first,
         so it tolerates the postMessage landing after the popup closed."""
         expect(self.popup_result).to_have_text(text)
+
+    def expect_tooltip_for(self, series_key: str, index: int) -> None:
+        """Assert the tooltip is showing exactly the hovered point. The
+        expected value comes from the point's mirror node, so a chart whose
+        tooltip renders a different number than it plotted still fails."""
+        expected = self.chart_point(series_key, index).get_attribute("data-value")
+        expect(self.chart_tooltip).to_be_visible()
+        expect(self.chart_tooltip).to_have_attribute("data-series", series_key)
+        expect(self.chart_tooltip).to_have_attribute("data-index", str(index))
+        expect(self.chart_tooltip).to_have_attribute("data-value", expected)
+        expect(self.chart_tooltip).to_contain_text(expected)
+
+    def expect_tooltip_hidden(self) -> None:
+        """to_be_hidden() is safe here, unlike on elements that only exist in
+        one state: the tooltip element is always in the DOM, so "hidden"
+        cannot be confused with "not rendered yet"."""
+        expect(self.chart_tooltip).to_be_hidden()
+
+    def expect_visible_series_count(self, count: int) -> None:
+        """The chart publishes how many series it actually drew as
+        data-series-count on the canvas -- part of the mirror contract."""
+        expect(self.chart_canvas).to_have_attribute("data-series-count", str(count))
+
+    def expect_legend_series(self, count: int) -> None:
+        expect(self.chart_legend_toggles).to_have_count(count)
+
+    def expect_point_count(self, series_key: str, count: int) -> None:
+        expect(self.chart_series_points(series_key)).to_have_count(count)
+
+    def expect_chart_generation(self, generation: int) -> None:
+        expect(self.chart_canvas).to_have_attribute("data-generation", str(generation))
 
     # --- security probes ---------------------------------------------------
     # Intentionally white-box, but owned here so tests don't hand-roll DOM or

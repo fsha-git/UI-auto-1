@@ -30,6 +30,39 @@ Suite run against each injected-bug page.
 **Caught by:**
 - `test_add_whitespace_only_todo_item_is_ignored[chromium]`
 
+## bug_chart_legend_toggle_noop.html
+**Caught by:**
+- `test_legend_toggle_removes_series_from_chart_and_hit_test[chromium]`
+
+## bug_chart_regenerate_noop.html
+**Caught by:**
+- `test_regenerate_produces_a_new_dataset[chromium]`
+
+## bug_chart_series_missing.html
+**Caught by:**
+- `test_chart_renders_all_series[chromium]`
+- `test_legend_toggle_removes_series_from_chart_and_hit_test[chromium]`
+
+## bug_chart_tooltip_never_hides.html
+**Caught by:**
+- `test_tooltip_hides_on_mouse_leave[chromium]`
+
+## bug_chart_tooltip_never_shown.html
+**Caught by:**
+- `test_hover_point_shows_tooltip_with_its_value[chromium]`
+- `test_tooltip_follows_to_a_point_in_another_series[chromium]`
+- `test_tooltip_hides_on_mouse_leave[chromium]`
+- `test_legend_toggle_removes_series_from_chart_and_hit_test[chromium]`
+- `test_regenerate_produces_a_new_dataset[chromium]`
+
+## bug_chart_tooltip_wrong_value.html
+**Caught by:**
+- `test_hover_point_shows_tooltip_with_its_value[chromium]`
+- `test_tooltip_follows_to_a_point_in_another_series[chromium]`
+- `test_tooltip_hides_on_mouse_leave[chromium]`
+- `test_legend_toggle_removes_series_from_chart_and_hit_test[chromium]`
+- `test_regenerate_produces_a_new_dataset[chromium]`
+
 ## bug_checkbox_label_static.html
 **Caught by:**
 - `test_checkbox_toggle[chromium]`
