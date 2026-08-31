@@ -24,7 +24,7 @@ jmeter.log
 
 # Claude Code
 .plan/
-.claude/settings.local.json
+.claude/
 
 # Stray files from a mistyped redirect (e.g. `... > 127.0.0.1:1080`)
 127.0.0.1:*
