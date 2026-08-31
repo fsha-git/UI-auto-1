@@ -3,61 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <title>UI Automation Demo Page</title>
-<script>
-  // Auth gate: bounce to the login page if there's no session token.
-  if (!localStorage.getItem('demo_auth_token')) {
-    window.location.replace('login.html');
-  }
-</script>
 <style>
   body { font-family: Arial, sans-serif; max-width: 480px; margin: 40px auto; }
   h1 { font-size: 20px; }
   section { margin-bottom: 24px; padding: 12px; border: 1px solid #ddd; border-radius: 6px; }
-  input[type="text"] { padding: 6px; }
   button { padding: 6px 12px; margin-left: 6px; cursor: pointer; }
-  #todo-list li { padding: 2px 0; }
 </style>
-<script src="i18n/catalog.js"></script>
-<script src="i18n/apply.js"></script>
+<script src="../i18n/catalog.js"></script>
+<script src="../i18n/apply.js"></script>
 </head>
 <body>
   <h1>UI Automation Demo Page</h1>
-
-  <section>
-    <p>Logged in as <strong id="logged-in-user">demo</strong>. <button id="logout-btn" data-testid="logout" data-i18n="logout">Logout</button> <a href="dashboard.html">Dashboard</a></p>
-  </section>
-
-  <section>
-    <h2>To-Do List</h2>
-    <input type="text" id="todo-input" data-testid="todo-input"
-           data-i18n-placeholder="todoPlaceholder" placeholder="Enter a task">
-    <button id="add-btn" data-testid="add-todo" data-i18n="addTodo">Add</button>
-    <ul id="todo-list" data-testid="todo-list"></ul>
-  </section>
-
-  <section>
-    <h2>Status Toggle</h2>
-    <label>
-      <input type="checkbox" id="status-checkbox" data-testid="status-checkbox">
-      <span data-i18n="enableFeature">Enable feature</span>
-    </label>
-    <p id="status-label" data-testid="status-label">Status: OFF</p>
-  </section>
-
-  <section>
-    <h2>Counter</h2>
-    <button id="counter-btn" data-testid="counter-increment" data-i18n="counterIncrement">Click me</button>
-    <span id="counter" data-testid="counter-value">0</span>
-  </section>
-
-  <section>
-    <h2>Windows &amp; Tabs</h2>
-    <p>
-      <a href="profile.html" target="_blank" rel="noopener" data-testid="profile-link" data-i18n="openProfile">Open profile</a>
-      <button id="open-popup-btn" data-testid="open-popup" data-i18n="openPopup">Quick note</button>
-    </p>
-    <p id="popup-result" data-testid="popup-result"></p>
-  </section>
 
   <section>
     <h2>Trend Chart</h2>
@@ -87,61 +43,6 @@
   </section>
 
   <script>
-    document.getElementById('logout-btn').addEventListener('click', () => {
-      localStorage.removeItem('demo_auth_token');
-      window.location.href = 'login.html';
-    });
-
-    const todoInput = document.getElementById('todo-input');
-    const addBtn = document.getElementById('add-btn');
-    const todoList = document.getElementById('todo-list');
-
-    addBtn.addEventListener('click', () => {
-      const text = todoInput.value.trim();
-      if (!text) return;
-      const li = document.createElement('li');
-      li.textContent = text;
-      todoList.appendChild(li);
-      todoInput.value = '';
-    });
-
-    const statusCheckbox = document.getElementById('status-checkbox');
-    const statusLabel = document.getElementById('status-label');
-
-    statusCheckbox.addEventListener('change', () => {
-      statusLabel.textContent = `Status: ${statusCheckbox.checked ? 'ON' : 'OFF'}`;
-    });
-
-    const counterBtn = document.getElementById('counter-btn');
-    const counter = document.getElementById('counter');
-    let count = 0;
-
-    counterBtn.addEventListener('click', () => {
-      count += 1;
-      counter.textContent = String(count);
-    });
-  </script>
-
-  <script>
-    let quickNotePopup = null;
-
-    document.getElementById('open-popup-btn').addEventListener('click', () => {
-      quickNotePopup = window.open('popup.html', 'quick-note', 'width=360,height=320');
-    });
-
-    window.addEventListener('message', (event) => {
-      // Only accept notes from the popup this page opened: same origin,
-      // same window handle, expected shape. Any other same-origin window
-      // sending {type:'quick-note'} is ignored.
-      if (event.origin !== window.location.origin) return;
-      if (quickNotePopup === null || event.source !== quickNotePopup) return;
-      if (event.data && event.data.type === 'quick-note') {
-        document.getElementById('popup-result').textContent = event.data.text;
-      }
-    });
-  </script>
-
-  <script>
     // Trend chart: multi-series line chart on <canvas>, with a DOM tooltip.
     // Kept in its own script block (like the multi-window block above) so the
     // frozen mutants under web/bugs/ never overlap it.
@@ -155,8 +56,9 @@
     // data-series attributes, while window.I18N maps them to display labels.
     const CHART_SERIES = [
       { key: 'chartSeriesVisits', color: '#2f6fdd', min: 100, max: 200 },
-      { key: 'chartSeriesSales',  color: '#2fa84f', min: 40,  max: 100 },
-      { key: 'chartSeriesErrors', color: '#d9534f', min: 0,   max: 30 }
+      // BUG: the errors series was dropped from the list, so it is never
+      // generated, drawn, or legended.
+      { key: 'chartSeriesSales',  color: '#2fa84f', min: 40,  max: 100 }
     ];
     const CHART_POINTS = 12;
     const CHART_W = 440, CHART_H = 220;  // CSS pixels; backing store is dpr-scaled

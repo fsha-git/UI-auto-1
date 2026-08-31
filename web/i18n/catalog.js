@@ -27,7 +27,12 @@ window.I18N_CATALOGS = {
     "openPopup": "Quick note",
     "popupNotePlaceholder": "Type a note",
     "popupSend": "Send to main page",
-    "profileTitle": "Your profile"
+    "profileTitle": "Your profile",
+    "chartTrend": "Trend chart",
+    "chartRegenerate": "Regenerate data",
+    "chartSeriesVisits": "Visits",
+    "chartSeriesSales": "Sales",
+    "chartSeriesErrors": "Errors"
   },
   "zh": {
     "todoPlaceholder": "输入任务",
@@ -44,6 +49,11 @@ window.I18N_CATALOGS = {
     "openPopup": "快速便签",
     "popupNotePlaceholder": "输入便签内容",
     "popupSend": "发送到主页面",
-    "profileTitle": "你的个人资料"
+    "profileTitle": "你的个人资料",
+    "chartTrend": "趋势图",
+    "chartRegenerate": "重新生成数据",
+    "chartSeriesVisits": "访问量",
+    "chartSeriesSales": "销售额",
+    "chartSeriesErrors": "错误数"
   }
 };

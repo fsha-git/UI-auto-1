@@ -13,10 +13,11 @@ you must not break, and how to prove you didn't.
 
 ## 1. The invariant that matters most
 
-**`web/bugs/bug_*.html` are 15 frozen mutants, each carrying one injected
+**`web/bugs/bug_*.html` are 21 frozen mutants, each carrying one injected
 defect. `scripts/triage.py` runs the matching test file against every one —
 `tests/test_demo.py` for the classic demo mutants, `tests/test_windows.py` for
-the `bug_win_*` multi-window mutants (see `SUITE_FOR_PREFIX` in the script) —
+the `bug_win_*` multi-window mutants, `tests/test_chart.py` for the
+`bug_chart_*` trend-chart mutants (see `SUITE_FOR_PREFIX` in the script) —
 and records which tests catch which bug in `TRIAGE.md`.**
 
 ```bash
@@ -57,9 +58,11 @@ Three rules follow:
 
 The classic mutants are older copies that predate the auth gate, the logout
 button, and the Windows & Tabs section; the `bug_win_*` mutants carry only the
-Windows & Tabs section. Both are expected: a mutant only needs to support the
-test file triage runs against it — which is also why multi-window tests live
-in `tests/test_windows.py`, never in `tests/test_demo.py`.
+Windows & Tabs section, and the `bug_chart_*` mutants only the Trend Chart
+section. All are expected: a mutant only needs to support the test file triage
+runs against it — which is also why multi-window tests live in
+`tests/test_windows.py` and trend-chart tests in `tests/test_chart.py`, never
+in `tests/test_demo.py`.
 
 ---
 
