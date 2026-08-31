@@ -5,16 +5,16 @@
 
 | 档位 | 定位方式 | 当前用量 |
 |---|---|---|
-| 1 | role + 可访问名称 — `get_by_role("button", name="Add")` | 13 |
+| 1 | role + 可访问名称 — `get_by_role("button", name="Add")` | 19 |
 | 2 | label / placeholder — `get_by_label` / `get_by_placeholder` | 0 |
-| 3 | test id — `get_by_test_id`（专门埋的锚点） | 9 |
+| 3 | test id — `get_by_test_id`（专门埋的锚点） | 13 |
 | 4 | CSS / XPath — `locator(...)` | 1 |
 
 档位 1–2 定位的是用户或屏幕阅读器实际感知到的内容，所以这些测试同时也在验证
 UI 的可访问性。**档位 1 必须要有可访问名称。** 一个有 role 但没有 accessible
 name 的元素——没有 label 的 `<ul>`（role 是 `list`）、`<tr>`（role 是
 `row`）、纯装饰性的 `<div>`——不满足档位 1，会正确地降级到 test id。仓库里那
-9 个档位 3 的定位器，都是"确实没有可访问名称"的结果，不是遗漏。
+13 个档位 3 的定位器，都是"确实没有可访问名称"的结果，不是遗漏。
 
 唯一的档位 4 定位器是 `DemoPage.injected_script_count()`，它查找的是一个
 `<script>` 标签——这里被断言的契约本身就是"标签名"，所以只能用结构选择器。
@@ -29,12 +29,13 @@ name 的元素——没有 label 的 `<ul>`（role 是 `list`）、`<tr>`（role
 - **档位 1 把测试和"可见文案"绑在了一起**，所以文案只在一个地方维护——见下
   一节。`data-testid` 属性在 HTML 里始终保留，作为语义一旦回归时可以退回的
   档位 3 锚点。
-- **`DashboardPage.error_message` 是"带但书的档位 1"。** 这个 `<p>` 标签在
-  请求失败之前是 `display:none`，所以在默认态和成功态下它不在可访问性树
-  里，`get_by_role("alert")` 在这两种状态下匹配到的是**零个**元素。现有的
-  断言都是"它出现了 / 它显示了 X"这种形式，`expect()` 的重试机制能覆盖这种
-  场景。但如果要断言"没有显示错误"，必须用 `to_have_count(0)`——
-  `to_be_hidden()` 在元素被整个删除时也会通过，达不到验证目的。
+- **`DashboardPage.error_message` 和 `ProfilePage.error_message` 是"带但书
+  的档位 1"。** 这两个 `<p>` 标签在请求失败之前是 `display:none`，所以在默认
+  态和成功态下它们不在可访问性树里，`get_by_role("alert")` 在这两种状态下匹
+  配到的是**零个**元素。现有的断言都是"它出现了 / 它显示了 X"这种形式，
+  `expect()` 的重试机制能覆盖这种场景。但如果要断言"没有显示错误"，必须用
+  `to_have_count(0)`——`to_be_hidden()` 在元素被整个删除时也会通过，达不到
+  验证目的。
 
 结构性 CSS 选择器已经全部清除。曾经存在过的三个（`#chart .bar`、
 `#stats-table tbody tr`、`#todo-list li`）都在一次不影响行为的改动中失效：

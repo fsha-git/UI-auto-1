@@ -24,6 +24,7 @@ PARAM_DEFAULTS: dict[str, dict[str, int]] = {
         "spike_threads": 300, "spike_rampup": 5, "spike_duration": 30, "spike_delay": 60,
     },
     "stepload": {"step_threads": 50, "step_rampup": 5, "step_seconds": 60},
+    "profile": {"threads": 20, "rampup": 10, "duration": 60},
 }
 INFRA_PROPS = {"host", "port"}
 

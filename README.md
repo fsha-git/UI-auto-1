@@ -1,9 +1,10 @@
 # UI 自动化测试框架（Playwright + Pytest）
 
 一个以本地静态 Demo 站点为被测对象的完整 UI 自动化框架：登录、待办列表、数据看板
-（图表/表格）三个页面，配一个真实的 Python 后端，覆盖功能测试、Mock 测试、
-国际化测试、变异测试（mutation testing）、代码覆盖率染色，以及基于 JMeter 的
-六类负载/性能测试。演示账号：`demo` / `demo123`。
+（图表/表格）、个人资料（新标签页打开）与快速便签弹窗（`window.open`）多个页面，
+配一个真实的 Python 后端，覆盖功能测试、Mock 测试、多窗口/弹窗测试、国际化测试、
+变异测试（mutation testing）、代码覆盖率染色，以及基于 JMeter 的
+七类负载/性能测试。演示账号：`demo` / `demo123`。
 
 ## 快速开始
 
@@ -27,16 +28,18 @@ pytest
 | `web/login.html` | 登录页 |
 | `web/demo.html` | 主 Demo 页（待办列表 / 复选框 / 计数器），需登录后访问 |
 | `web/dashboard.html` | 数据看板页（柱状图 + 表格 + 合计），需登录，拉取 `GET /api/stats` |
-| `web/bugs/*.html` | `demo.html` 的 11 个冻结变异体，每个注入一个缺陷，用于变异测试 |
+| `web/profile.html` | 个人资料页（用户名 + 实时待办数），从 `demo.html` 以新标签页（`target=_blank`）打开，拉取 `GET /api/profile` |
+| `web/popup.html` | 快速便签弹窗，由 `demo.html` 的按钮 `window.open()` 打开，`postMessage` 回传后自关闭 |
+| `web/bugs/*.html` | 15 个冻结变异体（`bug_*`），每个注入一个缺陷，用于变异测试：11 个经典 demo 变异体 + 4 个多窗口变异体（`bug_win_*`，其中两个通过 `win_*` 伴生页面注入缺陷） |
 | `web/i18n/` | 前端读取的文案目录（`catalog.js`）与应用脚本（`apply.js`） |
 | `server/app.py` | Demo 后端（静态文件 + `/api/*` JSON 接口：登录、看板数据、待办 CRUD） |
 | `pages/base_page.py` | Page Object 公共基础设施（导航、session token、定位器策略） |
 | `pages/i18n.py` | 测试端读取的文案目录解析器（对应 `web/i18n/catalog.js`） |
-| `pages/login_page.py`、`pages/demo_page.py`、`pages/dashboard_page.py` | 三个页面的 Page Object |
-| `tests/` | pytest 测试；`tests/test_api.py` 是纯 API 测试（不启动浏览器） |
-| `scripts/triage.py` | 用 `tests/test_demo.py` 逐一跑 `web/bugs/*.html`，统计每个缺陷被哪些测试捕获 |
+| `pages/login_page.py`、`pages/demo_page.py`、`pages/dashboard_page.py`、`pages/profile_page.py`、`pages/popup_page.py` | 各页面的 Page Object；多窗口管道（`expect_page` / `expect_popup`）封装在 `DemoPage` 里 |
+| `tests/` | pytest 测试；`tests/test_api.py` 是纯 API 测试（不启动浏览器），`tests/test_windows.py` 是多标签页/弹窗测试 |
+| `scripts/triage.py` | 对 `web/bugs/bug_*.html` 逐一跑对应的测试文件（经典变异体跑 `test_demo.py`，`bug_win_*` 跑 `test_windows.py`），统计每个缺陷被哪些测试捕获 |
 | `scripts/js_coverage.py` | 基于 CDP 的 V8 精确覆盖率采集器，生成前端内联 JS 的染色报告 |
-| `perf/` | JMeter 负载/压力/阶梯/尖峰/长稳/并发测试计划、回归门禁、跨运行趋势看板 |
+| `perf/` | JMeter 七类测试计划（负载/压力/阶梯/尖峰/长稳/并发/个人资料只读）、回归门禁、跨运行趋势看板 |
 | `reports/` | 各类测试报告输出目录（已 gitignore，见下文） |
 
 ## 运行测试
@@ -55,6 +58,7 @@ pytest tests/test_frontend_perf.py -v   # 只跑前端渲染性能护栏
 ```bash
 pytest tests/test_api.py            # 纯 API 测试，不启动浏览器
 pytest tests/test_dashboard.py -v   # 数据看板的 Mock 测试（见 MOCK_TESTS.md）
+pytest tests/test_windows.py        # 多标签页 / window.open 弹窗 / 跨窗口交互
 pytest tests/test_i18n.py           # 中英文两个 locale 的全量交互回归
 ```
 
@@ -68,7 +72,6 @@ pytest --demo-html web/bugs/bug_add_dedupes_items.html
 
 ```bash
 playwright show-trace test-results/<用例目录>/trace.zip   # 逐帧看 DOM/网络/console
-playwright show-report                                     # 打开 Playwright 自带报告
 
 # codegen 需要先手动起一个服务监听该端口（pytest 自己的 demo_server fixture
 # 用的是随机端口，起不来给 codegen 用）：
@@ -112,9 +115,11 @@ pytest --demo-html web/bugs/bug_add_dedupes_items.html \
 
 ## 核心脚本
 
-- **`scripts/triage.py`** — 变异测试的核心：对 `web/bugs/` 下每一个变异体跑一遍
-  `tests/test_demo.py`，记录哪些用例捕获了哪个缺陷。改动共享标记（Page Object /
-  定位器 / 文案）后必须重新生成并 diff：
+- **`scripts/triage.py`** — 变异测试的核心：对 `web/bugs/` 下每一个 `bug_*`
+  变异体跑一遍对应的测试文件（按文件名前缀选择：经典变异体 →
+  `tests/test_demo.py`，`bug_win_*` → `tests/test_windows.py`），记录哪些用例
+  捕获了哪个缺陷。改动共享标记（Page Object / 定位器 / 文案）后必须重新生成并
+  diff：
 
   ```bash
   python scripts/triage.py --write /tmp/TRIAGE_new.md
@@ -127,12 +132,13 @@ pytest --demo-html web/bugs/bug_add_dedupes_items.html \
 - **`perf/run_perf.sh`** — 一键运行 JMeter 负载/性能测试：
 
   ```bash
-  perf/run_perf.sh all            # performance / stress / stepload / spike / concurrency
+  perf/run_perf.sh all            # performance / stress / stepload / spike / concurrency / profile
   perf/run_perf.sh performance    # 只跑基线性能
+  perf/run_perf.sh profile        # 只跑 /api/profile 只读场景
   perf/run_perf.sh soak           # 长稳测试（默认 30 分钟，不含在 all 里）
   ```
 
-  详见 [`PERFORMANCE.md`](PERFORMANCE.md)，含账号隔离、六类场景说明、回归门禁、
+  详见 [`PERFORMANCE.md`](PERFORMANCE.md)，含账号隔离、七类场景说明、回归门禁、
   趋势看板用法。
 
 ## 设计要点（速览）
@@ -157,9 +163,9 @@ pytest --demo-html web/bugs/bug_add_dedupes_items.html \
 
 | 文档 | 内容 |
 |---|---|
-| [`AGENTS.md`](AGENTS.md) | 面向改动者的强制规范：定位器、断言、变异测试不可回归、压测账号隔离等六条约定，以及提交前必须跑的验证清单 |
+| [`AGENTS.md`](AGENTS.md) | 面向改动者的强制规范：定位器、断言、变异测试不可回归、压测账号隔离、文档同步等七条约定，以及提交前必须跑的验证清单 |
 | [`LOCATORS.md`](LOCATORS.md) | 定位器优先级策略详解，及其与文案目录的关系 |
 | [`COVERAGE.md`](COVERAGE.md) | API 测试清单、Python 覆盖率与前端 JS 染色两条流水线的原理 |
 | [`MOCK_TESTS.md`](MOCK_TESTS.md) | `tests/test_dashboard.py` 逐个 Mock 测试场景说明 |
-| [`PERFORMANCE.md`](PERFORMANCE.md) | JMeter 六类场景、账号隔离、回归门禁、趋势看板、结果有效性边界 |
+| [`PERFORMANCE.md`](PERFORMANCE.md) | JMeter 七类场景、账号隔离、回归门禁、趋势看板、结果有效性边界 |
 | [`TRIAGE.md`](TRIAGE.md) | `scripts/triage.py` 生成的变异测试检出报告 |

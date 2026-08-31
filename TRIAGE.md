@@ -53,3 +53,20 @@ Suite run against each injected-bug page.
 **Caught by:**
 - `test_page_title[chromium]`
 
+## bug_win_popup_no_close.html
+**Caught by:**
+- `test_popup_sends_note_back_to_opener[chromium]`
+
+## bug_win_popup_result_noop.html
+**Caught by:**
+- `test_popup_sends_note_back_to_opener[chromium]`
+
+## bug_win_profile_count_static.html
+**Caught by:**
+- `test_profile_page_shows_live_todo_count[chromium]`
+
+## bug_win_profile_link_same_tab.html
+**Caught by:**
+- `test_profile_link_opens_a_new_tab[chromium]`
+- `test_profile_page_shows_live_todo_count[chromium]`
+

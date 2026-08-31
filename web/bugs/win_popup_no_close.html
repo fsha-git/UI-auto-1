@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>UI Automation Demo Quick Note</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 16px; }
+  h1 { font-size: 16px; }
+  input[type="text"] { padding: 6px; width: 200px; }
+  button { padding: 6px 12px; margin-left: 6px; cursor: pointer; }
+</style>
+<script src="../i18n/catalog.js"></script>
+<script src="../i18n/apply.js"></script>
+</head>
+<body>
+  <h1 data-i18n="openPopup">Quick note</h1>
+
+  <input type="text" id="note-input" data-testid="note-input"
+         data-i18n-placeholder="popupNotePlaceholder" placeholder="Type a note">
+  <button id="send-note-btn" data-testid="send-note" data-i18n="popupSend">Send to main page</button>
+
+  <script>
+    const noteInput = document.getElementById('note-input');
+    const sendNoteBtn = document.getElementById('send-note-btn');
+
+    sendNoteBtn.addEventListener('click', () => {
+      const text = noteInput.value.trim();
+      if (!text) return;
+      if (window.opener) {
+        window.opener.postMessage({ type: 'quick-note', text }, window.location.origin);
+        // BUG: the popup stays open after sending instead of closing itself
+      }
+    });
+  </script>
+</body>
+</html>

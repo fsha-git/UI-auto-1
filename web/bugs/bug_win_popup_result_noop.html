@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>UI Automation Demo Page</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 480px; margin: 40px auto; }
+  h1 { font-size: 20px; }
+  section { margin-bottom: 24px; padding: 12px; border: 1px solid #ddd; border-radius: 6px; }
+  button { padding: 6px 12px; margin-left: 6px; cursor: pointer; }
+</style>
+<script src="../i18n/catalog.js"></script>
+<script src="../i18n/apply.js"></script>
+</head>
+<body>
+  <h1>UI Automation Demo Page</h1>
+
+  <section>
+    <h2>Windows &amp; Tabs</h2>
+    <p>
+      <a href="../profile.html" target="_blank" rel="noopener" data-testid="profile-link" data-i18n="openProfile">Open profile</a>
+      <button id="open-popup-btn" data-testid="open-popup" data-i18n="openPopup">Quick note</button>
+    </p>
+    <p id="popup-result" data-testid="popup-result"></p>
+  </section>
+
+  <script>
+    let quickNotePopup = null;
+
+    document.getElementById('open-popup-btn').addEventListener('click', () => {
+      quickNotePopup = window.open('../popup.html', 'quick-note', 'width=360,height=320');
+    });
+
+    // BUG: the message listener accepts the note but never renders it
+    window.addEventListener('message', (event) => {
+      if (event.origin !== window.location.origin) return;
+      if (quickNotePopup === null || event.source !== quickNotePopup) return;
+      if (event.data && event.data.type === 'quick-note') {
+        // (result paragraph is never updated)
+      }
+    });
+  </script>
+</body>
+</html>

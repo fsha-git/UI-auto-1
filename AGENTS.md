@@ -13,9 +13,11 @@ you must not break, and how to prove you didn't.
 
 ## 1. The invariant that matters most
 
-**`web/bugs/*.html` are 11 frozen mutants of `web/demo.html`, each carrying one
-injected defect. `scripts/triage.py` runs `tests/test_demo.py` against every one
-of them and records which tests catch which bug in `TRIAGE.md`.**
+**`web/bugs/bug_*.html` are 15 frozen mutants, each carrying one injected
+defect. `scripts/triage.py` runs the matching test file against every one —
+`tests/test_demo.py` for the classic demo mutants, `tests/test_windows.py` for
+the `bug_win_*` multi-window mutants (see `SUITE_FOR_PREFIX` in the script) —
+and records which tests catch which bug in `TRIAGE.md`.**
 
 ```bash
 .venv/bin/python scripts/triage.py --write /tmp/TRIAGE_new.md
@@ -24,9 +26,12 @@ diff TRIAGE.md /tmp/TRIAGE_new.md      # MUST be empty
 
 A non-empty diff means your change silently weakened the suite's ability to
 detect real defects. That is the most expensive kind of regression in a test
-framework, and nothing else you did matters until it is fixed.
+framework, and nothing else you did matters until it is fixed. The one
+legitimate non-empty diff is **purely additive**: a change that introduces new
+mutants regenerates and commits `TRIAGE.md` in the same change, and every
+pre-existing section must remain byte-identical.
 
-Two rules follow:
+Three rules follow:
 
 - **Changing shared static markup in `web/demo.html` means changing all 11
   mutants too.** They are byte-identical to it in the regions tests locate
@@ -38,9 +43,23 @@ Two rules follow:
   mutant's defect lives in exactly that code. This is why the copy catalogue
   (§4) covers only static markup: rewriting that JS would put the injected
   defects at risk for no gain.
+- **New feature tests ship with mutants.** A new UI feature area with its own
+  test file also gets at least one frozen mutant per defect class those tests
+  claim to catch, so the triage report *proves* the detection instead of
+  asserting it. To add a group: pick a filename prefix (`bug_win_*` is the
+  multi-window group), map it in `SUITE_FOR_PREFIX` in `scripts/triage.py`,
+  and regenerate `TRIAGE.md`. Where the defect lives in a page other than the
+  one `--demo-html` swaps (e.g. the profile tab or the popup), the `bug_*`
+  mutant is a demo copy that opens a **companion mutant page** — named without
+  the `bug_` prefix (`win_profile_count_static.html`) so triage never runs it
+  directly. Every mutant must be CAUGHT; a MISSED entry is a missing test, not
+  a report to commit.
 
-The mutants are older copies that predate the auth gate and the logout button.
-That is expected; they only need to support `tests/test_demo.py`.
+The classic mutants are older copies that predate the auth gate, the logout
+button, and the Windows & Tabs section; the `bug_win_*` mutants carry only the
+Windows & Tabs section. Both are expected: a mutant only needs to support the
+test file triage runs against it — which is also why multi-window tests live
+in `tests/test_windows.py`, never in `tests/test_demo.py`.
 
 ---
 
@@ -83,13 +102,13 @@ they are the anchor to drop back to if semantics ever regress.
 - **`data-value` on the chart bars is a test contract**, not an implementation
   detail. It is commented as such in `web/dashboard.html`. A chart
   re-implementation must keep it.
-- **`DashboardPage.error_message` is tier 1 with a caveat.** That paragraph is
-  `display:none` until a request fails, so it is absent from the accessibility
-  tree and `get_by_role("alert")` resolves to **zero** elements in the default
-  and success states. Assertions of the form "it appeared / it says X" are fine
-  (`expect()` retries into them). To assert that *no* error is shown, use
-  `to_have_count(0)` — `to_be_hidden()` would also pass if the element were
-  deleted outright.
+- **`DashboardPage.error_message` and `ProfilePage.error_message` are tier 1
+  with a caveat.** Those paragraphs are `display:none` until a request fails, so
+  they are absent from the accessibility tree and `get_by_role("alert")`
+  resolves to **zero** elements in the default and success states. Assertions of
+  the form "it appeared / it says X" are fine (`expect()` retries into them). To
+  assert that *no* error is shown, use `to_have_count(0)` — `to_be_hidden()`
+  would also pass if the element were deleted outright.
 
 ---
 
@@ -179,6 +198,15 @@ the label assertion.
 Using the `page` fixture directly for network interception (`page.route(...)`) is
 fine — that is test-level control of the environment, not UI knowledge.
 
+**Multi-window plumbing is page-object plumbing.** Which Playwright event a
+click produces (`context.expect_page()` for a `target=_blank` tab,
+`page.expect_popup()` for `window.open`) is a property of the UI, so it lives in
+`DemoPage.open_profile_tab()` / `open_quick_note_popup()`, which return the new
+window's page object. Tests never call `expect_popup` / `wait_for_event`
+themselves — the one sanctioned event wait is `PopupPage.wait_for_close()`,
+because page lifetime has no web-first `expect()` form; assert the observable
+outcome (the opener's result text) *before* waiting on it.
+
 ---
 
 ## 6. Load and performance testing
@@ -202,12 +230,22 @@ Todo ids come from one global counter, not per user — that is what keeps
 
 ### Scenarios
 
-Six plans in `perf/`, each answering a different question: `performance`
+Seven plans in `perf/`, each answering a different question: `performance`
 (baseline load), `stepload` (capacity knee — each level held long enough to
 read, unlike a linear ramp), `spike` (recovery after a burst), `soak` (drift and
 leaks; excluded from `all` because it defaults to 30 min), `stress` (linear
-ramp), `concurrency` (rendezvous correctness). `stepload` uses four stock thread
-groups with staggered delays — **do not introduce a jmeter-plugins dependency.**
+ramp), `concurrency` (rendezvous correctness), `profile` (read-only baseline for
+`GET /api/profile`). `stepload` uses four stock thread groups with staggered
+delays — **do not introduce a jmeter-plugins dependency.**
+
+**A new endpoint gets a new scenario, not new samplers in an old one.** The
+regression gate compares each scenario against the median of its own past runs;
+mixing a new request into an existing plan changes its latency profile and
+quietly redefines that baseline. That is why `profile` is a separate JMX.
+Registering a scenario touches four places: the `.jmx`, `run_perf.sh` (usage
+comment, target `case`, `thresholds_for`), `record_run.py` (`PARAM_DEFAULTS`,
+mirroring the JMX's `${__P(...)}` defaults), and `make_dashboard.py`
+(`TYPE_ORDER` / `TYPE_TITLES`).
 
 ### The regression gate has two guards — leave them in
 
@@ -231,9 +269,36 @@ run, reporting a "+100% p95 regression" for 1 ms → 2 ms:
 
 ---
 
+## 7. Docs ship with the change
+
+The Markdown docs are read by both humans and tooling agents; a doc that
+describes last month's code is worse than no doc, because it gets trusted.
+**Any change to an area below updates its paired doc in the same change** — not
+in a follow-up:
+
+| If you touched… | Update |
+|---|---|
+| pages, page objects, test files, perf scenarios, or how anything is run | `README.md` (项目结构 table, 运行测试 commands, the intro's feature list) |
+| any locator in `pages/` (added, removed, or moved between tiers) | `LOCATORS.md` — **recount the tier table from the code** (`grep get_by_role / get_by_test_id / locator(` over `pages/`), don't adjust it incrementally; extend the documented-traps list if the new locator carries a caveat |
+| `server/app.py` endpoints, or either coverage pipeline (`scripts/js_coverage.py`, the `js_coverage` fixture, `pytest-cov` config) | `COVERAGE.md` — endpoint table, pipeline description, and refresh the 快照 section's date/numbers when they materially change |
+| anything under `perf/` | `PERFORMANCE.md` — scenario table, 设计意图 bullet for a new scenario, thresholds |
+| `tests/test_dashboard.py` | `MOCK_TESTS.md` — it enumerates that file's scenarios one by one |
+| a new feature-area test file | new `bug_*` mutants + regenerated `TRIAGE.md` (§1), and the `web/bugs/` row in `README.md` |
+| a convention in this file (new rule, changed count, new trap) | `AGENTS.md` itself — including the examples above that name specific classes and scenario counts, which go stale silently |
+
+`TRIAGE.md` is the exception: it is **generated** by `scripts/triage.py` and is
+never edited by hand — a hand edit either lies about detection ability or masks
+a real regression that the diff in §1 would have caught.
+
+The copy catalogue rule (§4) is the model to follow: docs that can be derived
+from code should be *recounted* from code, and docs that state numbers should
+say when the numbers were measured.
+
+---
+
 ## Verification
 
-Run all four before reporting completion. The triage diff is not optional.
+Run all five before reporting completion. The triage diff is not optional.
 
 ```bash
 # 1. Full suite — expect zero reruns, not just zero failures
@@ -254,6 +319,10 @@ grep -rn 'name="[A-Z]' pages/ | grep -v ':[0-9]*: *#'                 # hardcode
 
 # 4. Only if you touched perf/ or server/
 perf/run_perf.sh performance -Jduration=15 -Jrampup=3
+
+# 5. Doc sync (§7) — for each area you touched, confirm its paired doc changed
+#    in this same change; if a doc states counts, recount them from the code.
+git diff --stat        # code files with no matching doc row from §7? go back.
 ```
 
 Front-end performance guardrails are marked `perf`; skip them with

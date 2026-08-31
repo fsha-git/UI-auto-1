@@ -12,6 +12,7 @@ Endpoints:
 - GET    /api/todos           -> list *the caller's* todos (requires Bearer token)
 - POST   /api/todos           -> add todo (requires Bearer token, validates text)
 - DELETE /api/todos/<id>      -> delete own todo (requires Bearer token)
+- GET    /api/profile         -> caller's username + live todo count (Bearer token)
 
 Accounts and data isolation
 ---------------------------
@@ -144,6 +145,10 @@ def handle_list_todos(username: str) -> tuple[int, dict]:
     return 200, {"todos": todo_store.list(username)}
 
 
+def handle_get_profile(username: str) -> tuple[int, dict]:
+    return 200, {"username": username, "todoCount": len(todo_store.list(username))}
+
+
 def handle_add_todo(username: str, payload) -> tuple[int, dict]:
     if not isinstance(payload, dict):
         return 400, {"error": "request body must be a JSON object"}
@@ -227,6 +232,10 @@ class DemoApiHandler(SimpleHTTPRequestHandler):
             username = self._require_user()
             if username is not None:
                 self._send_json(*handle_list_todos(username))
+        elif self.path == "/api/profile":
+            username = self._require_user()
+            if username is not None:
+                self._send_json(*handle_get_profile(username))
         elif self.path.startswith("/api/"):
             self._send_json(404, {"error": "not found"})
         else:

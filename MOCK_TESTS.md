@@ -2,6 +2,8 @@
 
 本文档说明 [`tests/test_dashboard.py`](tests/test_dashboard.py) 中所有基于 Playwright `page.route()` 的网络请求 Mock 测试：每个测试模拟了什么场景、如何模拟、以及验证了什么效果。
 
+（同样的 `page.route()` 手法在 [`tests/test_windows.py`](tests/test_windows.py) 里还有一处：`test_profile_page_shows_error_when_api_fails` 拦截 `/api/profile` 返回 500，验证 `profile.html` 的错误状态。该文件的主题是多窗口测试，故不在本文档逐一展开。）
+
 ## 背景
 
 [`web/dashboard.html`](web/dashboard.html) 页面加载后会调用 `fetch('/api/stats')` 获取周数据，并渲染成柱状图 + 表格 + 合计（总和）。
