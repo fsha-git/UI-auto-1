@@ -5,16 +5,26 @@
 
 | 档位 | 定位方式 | 当前用量 |
 |---|---|---|
-| 1 | role + 可访问名称 — `get_by_role("button", name="Add")` | 23 |
-| 2 | label / placeholder — `get_by_label` / `get_by_placeholder` | 0 |
-| 3 | test id — `get_by_test_id`（专门埋的锚点） | 16 |
+| 1 | role + 可访问名称 — `get_by_role("button", name="Add")` | 33 |
+| 2 | label / placeholder — `get_by_label` / `get_by_placeholder` | 2 |
+| 3 | test id — `get_by_test_id`（专门埋的锚点） | 31 |
 | 4 | CSS / XPath — `locator(...)` | 3 |
+
+（用量是从代码里数出来的，不是手工累加的：
+`grep -rn "get_by_role" pages/ | grep -v ':[0-9]*: *#' | wc -l`，其余档位同理，
+过滤掉的是 `base_page.py` 里用 `get_by_role("button", name="Add")` 举例说明
+的注释行。）
 
 档位 1–2 定位的是用户或屏幕阅读器实际感知到的内容，所以这些测试同时也在验证
 UI 的可访问性。**档位 1 必须要有可访问名称。** 一个有 role 但没有 accessible
 name 的元素——没有 label 的 `<ul>`（role 是 `list`）、`<tr>`（role 是
 `row`）、纯装饰性的 `<div>`——不满足档位 1，会正确地降级到 test id。仓库里那
-16 个档位 3 的定位器，都是"确实没有可访问名称"的结果，不是遗漏。
+31 个档位 3 的定位器，都是"确实没有可访问名称"的结果，不是遗漏。
+
+档位 2 目前只有两处，都在 [`pages/studio_page.py`](pages/studio_page.py)：低代码
+Studio 的"场景名称"输入框，以及步骤面板里每个参数的输入框。它们各自有真正的
+`<label for=…>`，但没有值得绑定的 role + 名称组合（`textbox` 的名称就来自
+label，占位符则是更弱的来源），所以恰好落在档位 2 而不是被迫降到 test id。
 
 档位 4 定位器只有三个，各自的契约都不是 DOM 结构：
 `DemoPage.injected_script_count()` 查找的是一个 `<script>` 标签——被断言的契
@@ -28,7 +38,7 @@ name 的元素——没有 label 的 `<ul>`（role 是 `list`）、`<tr>`（role
 的 role 计算结果确实是 `textbox`。判断某个档位是否可用之前，用
 `locator.aria_snapshot()` 或 `get_by_role(...).count()` 实测。
 
-有两点值得知道：
+有三点值得知道：
 
 - **档位 1 把测试和"可见文案"绑在了一起**，所以文案只在一个地方维护——见下
   一节。`data-testid` 属性在 HTML 里始终保留，作为语义一旦回归时可以退回的
@@ -40,6 +50,17 @@ name 的元素——没有 label 的 `<ul>`（role 是 `list`）、`<tr>`（role
   `expect()` 的重试机制能覆盖这种场景。但如果要断言"没有显示错误"，必须用
   `to_have_count(0)`——`to_be_hidden()` 在元素被整个删除时也会通过，达不到
   验证目的。
+- **`StudioPage` 的档位 1 名称有两个来源，都不是硬编码。** 工具栏按钮
+  （运行 / 清空 / 保存 / 打开 Trace）的名称来自 `pages/i18n.py`，和其它页面
+  一样；但**步骤面板每个参数输入框的 label 文案来自
+  [`pages/studio_steps.py`](pages/studio_steps.py)**——参数名是步骤库
+  `web/studio/steps.js` 里的数据，不是 UI 文案，所以不进 i18n 目录，也不需要
+  翻译。同一个道理，`StudioPage.palette_step()` 给每个步骤埋的是**逐步骤的
+  test id**（`palette-step-<步骤 id>`）而不是共享 test id 加一个
+  `[data-step-id=…]` 的 CSS 过滤——后者会把这个定位器推到档位 4，而这里完全
+  没有必要。另外 Studio 的两个面板互相 `display:none`，所以隐藏面板里的按钮
+  在可访问性树里同样是**零个**元素（和上面 `role=alert` 是同一个陷阱）：测试
+  必须先切到对应标签页，才能定位到该面板里的控件。
 
 结构性 CSS 选择器已经全部清除。曾经存在过的三个（`#chart .bar`、
 `#stats-table tbody tr`、`#todo-list li`）都在一次不影响行为的改动中失效：
@@ -86,6 +107,13 @@ locale 的 key 集合一致，另一个测试保证没有两个 locale 共享同
 份数据、也不用引入构建步骤的原因。`t()` 遇到未知 key 或 locale 会直接抛错，
 而不是静默回退——静默回退只会让问题在很久之后，以"某个定位器莫名其妙匹配不
 到任何东西"的形式重新出现。
+
+同一套做法被用了两次：[`web/studio/steps.js`](web/studio/steps.js) 是低代码
+Studio 的步骤库，也是一个 `.js` 文件、也用普通 `<script>` 标签加载、里面也是
+严格 JSON，测试端由 [`pages/studio_steps.py`](pages/studio_steps.py) 解析。理由
+一样：一句 Gherkin 被四方读取（Studio 页面、`pages/studio_page.py`、
+`tests/test_dashboard_bdd.py` 的步骤定义、`studio/runner.py` 的 feature 渲染
+器），只有单一定义点才不会对不上。细节见 [`STUDIO.md`](STUDIO.md)。
 
 范围上只收录**定位器或断言依赖的文案**。`web/demo.html` 里状态标签、计数
 器、待办项渲染的文案故意没有收录——那正是 `web/bugs/*.html` 变异体专门破坏

@@ -13,12 +13,13 @@ you must not break, and how to prove you didn't.
 
 ## 1. The invariant that matters most
 
-**`web/bugs/bug_*.html` are 21 frozen mutants, each carrying one injected
+**`web/bugs/bug_*.html` are 30 frozen mutants, each carrying one injected
 defect. `scripts/triage.py` runs the matching test file against every one —
 `tests/test_demo.py` for the classic demo mutants, `tests/test_windows.py` for
 the `bug_win_*` multi-window mutants, `tests/test_chart.py` for the
-`bug_chart_*` trend-chart mutants (see `SUITE_FOR_PREFIX` in the script) —
-and records which tests catch which bug in `TRIAGE.md`.**
+`bug_chart_*` trend-chart mutants, `tests/test_studio.py` for the
+`bug_studio_*` low-code studio mutants (see `SUITE_FOR_PREFIX` in the script)
+— and records which tests catch which bug in `TRIAGE.md`.**
 
 ```bash
 .venv/bin/python scripts/triage.py --write /tmp/TRIAGE_new.md
@@ -58,11 +59,19 @@ Three rules follow:
 
 The classic mutants are older copies that predate the auth gate, the logout
 button, and the Windows & Tabs section; the `bug_win_*` mutants carry only the
-Windows & Tabs section, and the `bug_chart_*` mutants only the Trend Chart
-section. All are expected: a mutant only needs to support the test file triage
-runs against it — which is also why multi-window tests live in
-`tests/test_windows.py` and trend-chart tests in `tests/test_chart.py`, never
-in `tests/test_demo.py`.
+Windows & Tabs section, the `bug_chart_*` mutants only the Trend Chart
+section, and the `bug_studio_*` mutants are copies of `web/studio.html`
+(a different page entirely). All are expected: a mutant only needs to support
+the test file triage runs against it — which is also why multi-window tests
+live in `tests/test_windows.py`, trend-chart tests in `tests/test_chart.py`,
+and low-code studio tests in `tests/test_studio.py`, never in
+`tests/test_demo.py`.
+
+A mutant of a page that is not `demo.html` needs a fixture that knows when to
+take `--demo-html` over. `studio_url` in `tests/conftest.py` is the pattern:
+it honours the option only when it names a `bug_studio_*` file, so triage can
+target the studio suite while a plain `pytest` run (whose `--demo-html`
+defaults to `web/demo.html`) still gets the real page.
 
 ---
 
@@ -178,6 +187,17 @@ Scope is limited to copy a locator or assertion depends on — see §1 for why t
 mutant-varied JS is excluded. `expect_status()` still hardcodes `ON`/`OFF` for
 exactly that reason; changing it requires solving the mutant problem first.
 
+**The same pattern, applied twice.** `web/studio/steps.js` is a second
+catalogue built the same way — a `.js` file loaded with a plain `<script>`
+tag, strict JSON inside the braces, parsed test-side by `pages/studio_steps.py`
+— and for the same reason: a step's Gherkin sentence is read by the studio
+page, by `pages/studio_page.py`, by the pytest-bdd step definitions in
+`tests/test_dashboard_bdd.py`, and by `studio/runner.py`. One definition site,
+four readers. Gherkin keywords (`Given`/`When`/`Then`) stay literal English in
+both files: they are syntax, not UI copy, and putting them in the i18n
+catalogue would also collide with the "no two locales share a translation"
+check.
+
 ---
 
 ## 5. Page objects own the UI, tests do not
@@ -241,6 +261,11 @@ ramp), `concurrency` (rendezvous correctness), `profile` (read-only baseline for
 `GET /api/profile`). `stepload` uses four stock thread groups with staggered
 delays — **do not introduce a jmeter-plugins dependency.**
 
+**Tooling endpoints are out of scope.** This rule is about the *application
+under test*. `studio/`'s `/studio/api/*` endpoints run pytest on request; they
+live on a `StudioHandler(DemoApiHandler)` subclass precisely so `server/app.py`
+— and therefore the baseline — is untouched. Never add them to a `.jmx`.
+
 **A new endpoint gets a new scenario, not new samplers in an old one.** The
 regression gate compares each scenario against the median of its own past runs;
 mixing a new request into an existing plan changes its latency profile and
@@ -286,6 +311,7 @@ in a follow-up:
 | `server/app.py` endpoints, or either coverage pipeline (`scripts/js_coverage.py`, the `js_coverage` fixture, `pytest-cov` config) | `COVERAGE.md` — endpoint table, pipeline description, and refresh the 快照 section's date/numbers when they materially change |
 | anything under `perf/` | `PERFORMANCE.md` — scenario table, 设计意图 bullet for a new scenario, thresholds |
 | `tests/test_dashboard.py` | `MOCK_TESTS.md` — it enumerates that file's scenarios one by one |
+| `web/studio.html`, `web/studio/steps.js`, `studio/`, `pages/studio_*.py`, or the BDD step definitions | `STUDIO.md` — step-library table, architecture, security boundary; a new step also updates the mapping table in `MOCK_TESTS.md` if it covers a technique listed there |
 | a new feature-area test file | new `bug_*` mutants + regenerated `TRIAGE.md` (§1), and the `web/bugs/` row in `README.md` |
 | a convention in this file (new rule, changed count, new trap) | `AGENTS.md` itself — including the examples above that name specific classes and scenario counts, which go stale silently |
 

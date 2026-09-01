@@ -82,6 +82,47 @@ Suite run against each injected-bug page.
 - `test_counter_increment[chromium]`
 - `test_counter_increment_many_times[chromium]`
 
+## bug_studio_gherkin_drops_params.html
+**Caught by:**
+- `test_a_palette_step_lands_on_the_timeline_with_its_parameters[chromium]`
+
+## bug_studio_remove_step_noop.html
+**Caught by:**
+- `test_removing_a_step_drops_it_from_the_timeline_and_the_gherkin[chromium]`
+- `test_run_posts_the_timeline_as_it_stands_now[chromium]`
+
+## bug_studio_result_hidden_on_suite_tab.html
+**Caught by:**
+- `test_running_existing_mock_tests_lists_one_row_per_test[chromium]`
+
+## bug_studio_run_evidence_hidden.html
+**Caught by:**
+- `test_a_run_shows_the_command_it_executed[chromium]`
+- `test_a_run_shows_the_pytest_output[chromium]`
+- `test_each_run_replaces_the_previous_run_s_output[chromium]`
+
+## bug_studio_run_sends_stale_scenario.html
+**Caught by:**
+- `test_run_posts_the_timeline_as_it_stands_now[chromium]`
+
+## bug_studio_stale_output_kept.html
+**Caught by:**
+- `test_each_run_replaces_the_previous_run_s_output[chromium]`
+
+## bug_studio_step_order_ignored.html
+**Caught by:**
+- `test_moving_a_step_up_reorders_the_scenario[chromium]`
+- `test_moving_a_step_down_reorders_the_scenario[chromium]`
+- `test_run_posts_the_timeline_as_it_stands_now[chromium]`
+
+## bug_studio_step_result_always_passed.html
+**Caught by:**
+- `test_run_results_light_each_step_in_timeline_order[chromium]`
+
+## bug_studio_test_results_missing.html
+**Caught by:**
+- `test_running_existing_mock_tests_lists_one_row_per_test[chromium]`
+
 ## bug_title_mismatch.html
 **Caught by:**
 - `test_page_title[chromium]`

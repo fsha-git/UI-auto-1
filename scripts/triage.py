@@ -5,12 +5,16 @@ here since login behavior doesn't vary by --demo-html.)
 
 Which suite runs is picked by the mutant's filename prefix (SUITE_FOR_PREFIX):
 plain `bug_*` mutants get tests/test_demo.py, `bug_win_*` mutants get
-tests/test_windows.py, and `bug_chart_*` mutants get tests/test_chart.py.
+tests/test_windows.py, `bug_chart_*` mutants get tests/test_chart.py, and
+`bug_studio_*` mutants get tests/test_studio.py.
 A `bug_win_*` mutant is a demo.html copy whose Windows & Tabs wiring carries
 the defect — either directly, or by opening a companion mutant page
 (`win_*.html`, no `bug_` prefix so it is not triaged on its own) in place of
 the real profile/popup page. A `bug_chart_*` mutant is a demo.html copy
 stripped down to the Trend Chart section, with one defect in its script.
+A `bug_studio_*` mutant is a copy of the low-code studio.html with one defect
+in its timeline/Gherkin/result logic; tests/test_studio.py mocks the runner
+API with page.route(), so triaging one never spawns a nested pytest run.
 
 Usage:
     python scripts/triage.py [--write TRIAGE.md]
@@ -28,6 +32,7 @@ BUGS_DIR = ROOT / "web" / "bugs"
 SUITE_FOR_PREFIX = {
     "bug_win_": "tests/test_windows.py",
     "bug_chart_": "tests/test_chart.py",
+    "bug_studio_": "tests/test_studio.py",
 }
 DEFAULT_SUITE = "tests/test_demo.py"
 

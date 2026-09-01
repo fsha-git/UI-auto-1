@@ -1,15 +1,17 @@
 import threading
+import time
 from functools import partial
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Browser, Page, Playwright
+from playwright.sync_api import Browser, Page, Playwright, Route
 
 from conftest import PROJECT_ROOT, WEB_DIR
 from pages.dashboard_page import DashboardPage
 from pages.demo_page import DemoPage
 from pages.login_page import LoginPage
+from pages.studio_page import StudioPage
 from scripts.js_coverage import JsCoverageCollector
 from server.app import DEMO_PASSWORD, DEMO_USERNAME, DemoApiHandler
 
@@ -71,6 +73,58 @@ def dashboard(page: Page, demo_server: str) -> DashboardPage:
     """An un-navigated dashboard page object. Tests call ``.open()`` themselves
     so they can install page.route() interception *before* navigating."""
     return DashboardPage(page, demo_server)
+
+
+def wait_for_intercepted_route(page: Page, pending: dict, key: str = "route",
+                               timeout_ms: int = 5_000) -> Route:
+    """Block until page.route() has actually intercepted the request.
+
+    page.goto() resolves on the `load` event, which carries no guarantee that
+    the route handler has already run — reading pending[key] straight
+    after open() is a race. Every Playwright call pumps the event loop, so
+    this polls the real condition instead of assuming it.
+
+    Lives here rather than in a test file because two suites need it:
+    tests/test_dashboard.py's pending-request test and the "held pending" /
+    "release the pending request" pair of BDD steps in
+    tests/test_dashboard_bdd.py. It is test-level control of the environment,
+    not UI knowledge, so it stays out of pages/.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    while key not in pending:
+        if time.monotonic() > deadline:
+            raise AssertionError("the /api/stats request was never intercepted")
+        page.wait_for_timeout(50)
+    return pending[key]
+
+
+#: Filename prefix of the Studio mutants (see scripts/triage.py). --demo-html
+#: normally points the demo suite at a mutant of demo.html; the Studio suite
+#: only takes it over when it is pointed at one of *its* mutants.
+STUDIO_MUTANT_PREFIX = "bug_studio_"
+
+
+@pytest.fixture
+def studio_url(demo_server: str, request: pytest.FixtureRequest) -> str:
+    """URL of the low-code Studio page.
+
+    Honours --demo-html only when it names a bug_studio_* mutant, so
+    scripts/triage.py can feed a Studio mutant to tests/test_studio.py while a
+    plain `pytest` run (whose --demo-html defaults to web/demo.html) still
+    gets the real page.
+    """
+    html_path = Path(request.config.getoption("--demo-html")).resolve()
+    if not html_path.name.startswith(STUDIO_MUTANT_PREFIX):
+        html_path = WEB_DIR / StudioPage.PATH
+    return f"{demo_server}/{html_path.relative_to(WEB_DIR).as_posix()}"
+
+
+@pytest.fixture
+def studio_page(page: Page, demo_server: str, studio_url: str) -> StudioPage:
+    """An un-navigated Studio page object. Tests call ``.open(studio_url)``
+    themselves so they can install page.route() interception of the runner
+    API *before* navigating — the same shape as the ``dashboard`` fixture."""
+    return StudioPage(page, demo_server)
 
 
 @pytest.fixture
