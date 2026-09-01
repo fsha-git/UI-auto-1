@@ -143,9 +143,14 @@ class StudioHandler(DemoApiHandler):
         if not isinstance(raw, list) or not raw:
             raise ScenarioError("select at least one test")
         known = set(mock_test_nodeids())
-        unknown = [item for item in raw if item not in known]
+        # isinstance first, for the same reason as the step-id check in
+        # studio/runner.py: `{} in known` raises TypeError on a set, and a
+        # crash is not a rejection. repr() keeps a hostile value printable
+        # and bounded in the message that goes back to the client.
+        unknown = [item for item in raw if not isinstance(item, str) or item not in known]
         if unknown:
-            raise ScenarioError(f"unknown test(s): {', '.join(map(str, unknown))}")
+            listed = ", ".join(repr(item)[:80] for item in unknown[:5])
+            raise ScenarioError(f"unknown test(s): {listed}")
         return list(raw)
 
     def _save_scenario(self, payload: object) -> None:

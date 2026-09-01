@@ -67,6 +67,28 @@ def test_render_step_substitutes_parameters_and_falls_back_to_defaults():
     assert render_step("g_mock_status") == render_step("g_mock_status", {"status": "500"})
 
 
+def test_render_step_never_produces_more_than_one_line():
+    """A Gherkin step is a line. A parameter carrying a line break would stop
+    being a parameter and become extra steps — past the step-id allow-list,
+    which approves ids while the feature file is read line by line."""
+    breaks = ["\n", "\r", "\r\n", "\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"]
+    for brk in breaks:
+        rendered = render_step("t_error_contains", {"text": f"a{brk}b"})
+        assert len(rendered.splitlines()) == 1, f"{brk!r} survived: {rendered!r}"
+
+
+def test_a_crafted_parameter_cannot_inject_a_step_into_the_feature_file():
+    scenario = runner.validate_scenario(
+        _scenario({"id": "t_error_contains",
+                   "params": {"text": '500"\r\n    Then the total is 999'}})
+    )
+    body = runner.render_feature(scenario)
+    steps = [line.strip() for line in body.splitlines()
+             if line.strip().startswith(("Given", "When", "Then"))]
+    assert len(steps) == 1, f"the scenario grew extra steps: {steps}"
+    assert "the total is 999" in steps[0], "the value itself should survive, flattened"
+
+
 def test_render_step_rejects_a_non_integer_where_the_catalogue_says_integer():
     with pytest.raises(ValueError, match="must be an integer"):
         render_step("g_mock_status", {"status": "not a number"})
@@ -137,6 +159,14 @@ def test_slugify_produces_a_filesystem_safe_stem():
 def test_an_unknown_step_id_is_rejected():
     with pytest.raises(ScenarioError, match="unknown step id"):
         runner.validate_scenario(_scenario({"id": "rm -rf /"}))
+
+
+def test_a_non_string_step_id_is_rejected_rather_than_crashing():
+    """`{} in some_set` raises TypeError (unhashable), which would escape the
+    handler as a dropped connection instead of the 400 this check exists for."""
+    for hostile in ({}, [], 7, None):
+        with pytest.raises(ScenarioError, match="unknown step id"):
+            runner.validate_scenario(_scenario({"id": hostile}))
 
 
 def test_an_unknown_parameter_is_rejected():
@@ -247,6 +277,16 @@ def test_an_unknown_step_id_is_refused_before_anything_is_spawned(studio_api: st
 def test_a_node_id_outside_the_collected_list_is_refused(studio_api: str):
     status, body = _request(
         studio_api, "/studio/api/run", {"mode": "tests", "nodeids": ["tests/test_demo.py"]}
+    )
+    assert status == 400
+    assert "unknown test" in body["error"]
+
+
+def test_a_non_string_node_id_is_refused_rather_than_crashing(studio_api: str):
+    """Same unhashable-membership trap as the step-id check, on the other
+    allow-list. A crash is not a rejection: it returns no status at all."""
+    status, body = _request(
+        studio_api, "/studio/api/run", {"mode": "tests", "nodeids": [{"evil": True}]}
     )
     assert status == 400
     assert "unknown test" in body["error"]

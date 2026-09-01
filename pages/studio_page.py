@@ -125,6 +125,20 @@ class StudioPage(BasePage):
         self.run_selected_btn.click()
         return self
 
+    # --- white-box probes --------------------------------------------------
+
+    def page_single_line(self, value: str) -> str:
+        """Run the page's own singleLine() over ``value``.
+
+        The Gherkin preview is only trustworthy while the page flattens a
+        parameter exactly the way pages/studio_steps.single_line() does — the
+        preview claims to be the .feature file that will run. That is a
+        property of two implementations agreeing, so it is checked directly
+        rather than inferred, and the evaluate() lives here rather than in a
+        test (AGENTS.md §5).
+        """
+        return self.page.evaluate("value => singleLine(value)", value)
+
     # --- assertion helpers -------------------------------------------------
 
     def expect_timeline(self, step_ids: list[str]) -> None:

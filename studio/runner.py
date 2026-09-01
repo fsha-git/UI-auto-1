@@ -89,7 +89,9 @@ def validate_scenario(scenario: object) -> dict:
         if not isinstance(raw, dict):
             raise ScenarioError(f"step {position} must be a JSON object")
         step_id = raw.get("id")
-        if step_id not in known:
+        # isinstance first: `{} in known` raises TypeError on a set, which
+        # would escape as a 500 instead of the 400 this check exists to give.
+        if not isinstance(step_id, str) or step_id not in known:
             raise ScenarioError(f"step {position}: unknown step id {step_id!r}")
         params = raw.get("params") or {}
         if not isinstance(params, dict):

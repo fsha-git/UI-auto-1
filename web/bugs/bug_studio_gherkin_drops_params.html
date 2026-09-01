@@ -168,6 +168,21 @@
       return '';
     }
 
+    // Mirrors pages/studio_steps.single_line(): a Gherkin step is a line, so a
+    // parameter carrying a line break would become extra steps. The Python
+    // renderer flattens it; this has to flatten it identically or the preview
+    // stops matching the .feature file that actually runs. The character set
+    // is Python's str.splitlines(), with \r\n counted as one break.
+    function singleLine(value) {
+      // splitlines() treats a break at the very end as a terminator rather
+      // than as a separator ("a\n" -> ["a"], not ["a", ""]), so that one is
+      // dropped before splitting. Without it the preview grows a trailing
+      // space the .feature file does not have.
+      var BREAK = /\r\n|[\n\r\u000b\u000c\u001c\u001d\u001e\u0085\u2028\u2029]/g;
+      var TRAILING_BREAK = /(?:\r\n|[\n\r\u000b\u000c\u001c\u001d\u001e\u0085\u2028\u2029])$/;
+      return String(value).replace(TRAILING_BREAK, '').split(BREAK).join(' ');
+    }
+
     // Mirrors pages/studio_steps.render_step(): the preview has to be exactly
     // what the backend writes into the .feature file, or the page would be
     // lying about what it is going to run.

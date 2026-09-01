@@ -218,6 +218,17 @@ pytest 自己的报告事件是**按用例**的，时序画布需要**按步骤*
 - `mode: "tests"` 的 node id 必须在 `pytest --collect-only` 收集到的清单里。
 - 用户输入只以 **Gherkin 参数**的身份进入 feature 文件，从不拼进命令行：
   `subprocess` 一律传参数列表，从不用 `shell=True`。
+- **参数里的换行会被压平**（`pages/studio_steps.single_line()`）。一条 Gherkin 步骤
+  就是一行，所以带换行的参数会不再是参数、而变成额外的步骤——校验批准的是步骤 id，
+  而 feature 文件是逐行读的，这就是一条绕过 id 白名单的路（注入的步骤仍必须是本仓库
+  实现过的，所以不是任意执行，但它是用户从未编排过的场景）。压平用 `str.splitlines()`
+  而不是手写字符类，"什么算换行"这件事就永远和真正切分文件的规则一致；页面上的
+  `singleLine()` 逐字符镜像了它，`tests/test_studio.py` 有一条 parity 测试盯着两边
+  不许分叉。`Scenario:` 那一行不需要额外防护——`clean_name()` 的 `str.split()`
+  本来就吃掉所有换行。
+- **校验先查类型再查白名单。** `{} in some_set` 会抛 `TypeError`（不可哈希），
+  崩溃不等于拒绝——它连状态码都不会返回。步骤 id 和 node id 两处白名单都先
+  `isinstance(..., str)`。
 - 产物下载端点用 `studio/runner.resolve_artifact()` 校验解析后的路径仍在该次运行的
   目录内，URL 里的 `..` 走不出去。
 

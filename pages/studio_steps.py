@@ -73,11 +73,33 @@ def step_param_names(step_id: str) -> list[str]:
     return _PLACEHOLDER.findall(step_template(step_id))
 
 
+def single_line(value: str) -> str:
+    """Flatten a parameter onto one line.
+
+    A Gherkin step *is* a line, so a parameter carrying a line break stops
+    being a parameter and becomes extra steps — which is a way past the
+    step-id allow-list at the file level, since validation approves ids while
+    the feature file is read line by line. (The step still has to be one this
+    repo implements, so it is not arbitrary execution; it is a scenario the
+    user never composed.)
+
+    str.splitlines() is used rather than a hand-written character class so the
+    set of "things that start a new line" is Python's own, and cannot drift
+    from what actually splits the rendered file.
+    """
+    return " ".join(value.splitlines())
+
+
 def render_step(step_id: str, params: dict[str, object] | None = None) -> str:
     """The Gherkin sentence with its placeholders substituted.
 
     Used by studio/runner.py to write the .feature file, and mirrored in
-    JavaScript by the Studio page's live preview.
+    JavaScript by the Studio page's live preview. Both go through
+    single_line() above, so the preview stays exactly what gets written.
+
+    The `Scenario:` line needs no equivalent guard: clean_name() in
+    studio/runner.py already collapses on str.split(), which splits on every
+    line break too.
     """
     params = params or {}
     values = {}
@@ -92,5 +114,5 @@ def render_step(step_id: str, params: dict[str, object] | None = None) -> str:
                     f"step {step_id!r} parameter {name!r} must be an integer, got {raw!r}"
                 ) from None
         else:
-            values[name] = str(raw)
+            values[name] = single_line(str(raw))
     return _PLACEHOLDER.sub(lambda m: values[m.group(1)], step_template(step_id))

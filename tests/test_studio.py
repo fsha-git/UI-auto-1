@@ -15,6 +15,7 @@ import pytest
 from playwright.sync_api import Page, Route, expect
 
 from pages.studio_page import StudioPage
+from pages.studio_steps import single_line
 
 STUB_RUN_ID = "stub-run"
 STUB_TRACE_COMMAND = "playwright show-trace reports/studio/runs/stub-run/artifacts/x/trace.zip"
@@ -355,6 +356,40 @@ def test_each_run_replaces_the_previous_run_s_output(
     stub_runner["output"] = "collected 2 items\n\n2 passed in 1.10s"
     studio_page.run()
     expect(studio_page.run_output).to_have_text("collected 2 items\n\n2 passed in 1.10s")
+
+
+# --- the preview must be the file that runs ---------------------------------
+
+# A Gherkin step *is* a line, so a parameter carrying a line break stops being
+# a parameter and becomes extra steps -- a way past the step-id allow-list at
+# the file level. pages/studio_steps.single_line() closes that; these check the
+# page agrees with it character for character, because a preview that differs
+# from the .feature file is the one thing this design cannot afford.
+
+LINE_BREAKS = ["\n", "\r", "\r\n", "\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"]
+FLATTENING_CASES = (
+    ["plain", "", "a b", "  spaced  ", "tab\there"]
+    + [f"a{brk}b" for brk in LINE_BREAKS]
+    + [f"{brk}lead" for brk in LINE_BREAKS]
+    + [f"trail{brk}" for brk in LINE_BREAKS]
+    + [f"a{brk}{brk}b" for brk in LINE_BREAKS]
+    + ['500"\r\n    Then the total is 999']
+)
+
+
+def test_the_page_flattens_parameters_exactly_as_the_renderer_does(
+    studio_page: StudioPage, studio_url: str, stub_runner: dict
+):
+    studio_page.open(studio_url)
+    for case in FLATTENING_CASES:
+        assert studio_page.page_single_line(case) == single_line(case), f"disagreed on {case!r}"
+
+
+# "the rendered step occupies one line" is deliberately NOT asserted here:
+# Playwright normalises whitespace, so to_contain_text cannot tell a newline
+# from a run of spaces and any such assertion would pass either way. It is
+# asserted against the renderer in tests/test_studio_backend.py instead, which
+# together with the parity test above covers the page too.
 
 
 # --- auth -------------------------------------------------------------------
