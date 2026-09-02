@@ -32,7 +32,19 @@ window.I18N_CATALOGS = {
     "chartRegenerate": "Regenerate data",
     "chartSeriesVisits": "Visits",
     "chartSeriesSales": "Sales",
-    "chartSeriesErrors": "Errors"
+    "chartSeriesErrors": "Errors",
+    "studioTabCompose": "Compose scenario",
+    "studioTabSuite": "Existing mock tests",
+    "studioScenarioName": "Scenario name",
+    "studioAddStep": "Add to timeline",
+    "studioMoveUp": "Move up",
+    "studioMoveDown": "Move down",
+    "studioRemoveStep": "Remove step",
+    "studioRun": "Run scenario",
+    "studioClear": "Clear timeline",
+    "studioSaveFeature": "Save as feature",
+    "studioOpenTrace": "Open trace",
+    "studioRunSelected": "Run selected tests"
   },
   "zh": {
     "todoPlaceholder": "输入任务",
@@ -54,6 +66,18 @@ window.I18N_CATALOGS = {
     "chartRegenerate": "重新生成数据",
     "chartSeriesVisits": "访问量",
     "chartSeriesSales": "销售额",
-    "chartSeriesErrors": "错误数"
+    "chartSeriesErrors": "错误数",
+    "studioTabCompose": "编排场景",
+    "studioTabSuite": "现有 Mock 用例",
+    "studioScenarioName": "场景名称",
+    "studioAddStep": "加入时序",
+    "studioMoveUp": "上移",
+    "studioMoveDown": "下移",
+    "studioRemoveStep": "删除步骤",
+    "studioRun": "运行场景",
+    "studioClear": "清空时序",
+    "studioSaveFeature": "保存为 feature",
+    "studioOpenTrace": "打开 Trace",
+    "studioRunSelected": "运行选中用例"
   }
 };

@@ -1,0 +1,435 @@
+"""Turn a Studio scenario into a real pytest run.
+
+The whole design goal is that the low-code path has *no* execution engine of
+its own: a scenario becomes a Gherkin .feature file, and pytest runs it
+through tests/test_dashboard_bdd.py with the project's own fixtures. What is
+left for this module is plumbing — validation, rendering, spawning, and
+collecting the artifacts back out.
+
+Validation is also the security boundary. Everything the browser sends is
+checked against web/studio/steps.js (unknown step id, unknown parameter,
+non-integer where the catalogue says integer) or against the collected node
+id list, and user input only ever reaches the subprocess *inside a file* —
+argv is built from constants and paths, and shell=True is never used.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+import threading
+import time
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from pages.studio_steps import render_step, step, step_ids
+
+ROOT = Path(__file__).resolve().parent.parent
+RUNS_DIR = ROOT / "reports" / "studio" / "runs"
+FEATURES_DIR = ROOT / "tests" / "features"
+BDD_SUITE = "tests/test_dashboard_bdd.py"
+MOCK_SUITE = "tests/test_dashboard.py"
+
+DEFAULT_SCENARIO_NAME = "Untitled studio scenario"
+MAX_NAME_LENGTH = 120
+
+#: How much of pytest's own output the page gets to show. The point of
+#: surfacing it at all is "did anything actually run?", which the tail answers;
+#: a runaway log should not turn every status poll into a megabyte of JSON.
+MAX_OUTPUT_LINES = 400
+MAX_OUTPUT_CHARS = 40_000
+
+#: pytest disables colour on a pipe, but PY_COLORS / FORCE_COLOR in the
+#: environment override that, and the escapes would land verbatim in the page's
+#: <pre>. --color=no handles the common case; this strips whatever slips past.
+_ANSI = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+_SLUG_UNSAFE = re.compile(r"[^a-z0-9]+")
+
+
+class ScenarioError(ValueError):
+    """A scenario the catalogue rejects. Surfaced to the page as a 400."""
+
+
+# ---------------------------------------------------------------------------
+# Scenario -> Gherkin
+# ---------------------------------------------------------------------------
+
+def clean_name(raw: object) -> str:
+    """A scenario name safe to put on a `Scenario:` line.
+
+    Gherkin ends the name at the newline, so a multi-line name would silently
+    turn the rest into an unparseable step.
+    """
+    name = " ".join(str(raw or "").split())
+    return (name or DEFAULT_SCENARIO_NAME)[:MAX_NAME_LENGTH]
+
+
+def slugify(name: str) -> str:
+    slug = _SLUG_UNSAFE.sub("_", name.lower()).strip("_")
+    return slug or "studio_scenario"
+
+
+def validate_scenario(scenario: object) -> dict:
+    """Check a scenario payload against the step catalogue, and return it
+    normalised. Raises ScenarioError with a message meant for the user."""
+    if not isinstance(scenario, dict):
+        raise ScenarioError("scenario must be a JSON object")
+    raw_steps = scenario.get("steps")
+    if not isinstance(raw_steps, list) or not raw_steps:
+        raise ScenarioError("scenario must have at least one step")
+
+    known = set(step_ids())
+    steps = []
+    for position, raw in enumerate(raw_steps, start=1):
+        if not isinstance(raw, dict):
+            raise ScenarioError(f"step {position} must be a JSON object")
+        step_id = raw.get("id")
+        # isinstance first: `{} in known` raises TypeError on a set, which
+        # would escape as a 500 instead of the 400 this check exists to give.
+        if not isinstance(step_id, str) or step_id not in known:
+            raise ScenarioError(f"step {position}: unknown step id {step_id!r}")
+        params = raw.get("params") or {}
+        if not isinstance(params, dict):
+            raise ScenarioError(f"step {position}: params must be a JSON object")
+        allowed = {spec["name"] for spec in step(step_id)["params"]}
+        unexpected = set(params) - allowed
+        if unexpected:
+            raise ScenarioError(
+                f"step {position}: unknown parameter(s) {', '.join(sorted(unexpected))}"
+            )
+        try:
+            # render_step is what enforces the declared parameter types, and
+            # it is the same function that writes the .feature line below.
+            render_step(step_id, params)
+        except ValueError as exc:
+            raise ScenarioError(f"step {position}: {exc}") from None
+        steps.append({"id": step_id, "params": {k: str(v) for k, v in params.items()}})
+
+    return {"name": clean_name(scenario.get("name")), "steps": steps}
+
+
+def render_feature(scenario: dict) -> str:
+    """Render a validated scenario as a Gherkin feature file.
+
+    The JavaScript preview in web/studio.html renders the same text; the two
+    read the same catalogue, so what the user sees is what pytest runs.
+    """
+    lines = [
+        "Feature: Low-code studio scenario",
+        "",
+        "  # Generated by the Mock Scenario Studio (web/studio.html).",
+        "  # Steps come from web/studio/steps.js; the implementations live in",
+        "  # tests/test_dashboard_bdd.py.",
+        f"  Scenario: {scenario['name']}",
+    ]
+    for item in scenario["steps"]:
+        spec = step(item["id"])
+        lines.append(f"    {spec['keyword']} {render_step(item['id'], item['params'])}")
+    return "\n".join(lines) + "\n"
+
+
+def save_feature(scenario: dict) -> Path:
+    """Promote a scenario into the committed suite. It then runs in every
+    plain `pytest`, which is the point of the save button: the low-code output
+    is a regression test, not a one-off recording."""
+    FEATURES_DIR.mkdir(parents=True, exist_ok=True)
+    path = FEATURES_DIR / f"{slugify(scenario['name'])}.feature"
+    path.write_text(render_feature(scenario), encoding="utf-8")
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Collecting the existing mock tests
+# ---------------------------------------------------------------------------
+
+def collect_mock_tests() -> list[str]:
+    """The node ids of tests/test_dashboard.py, asked of pytest itself.
+
+    Never a hardcoded list: the Studio's "existing mock tests" tab has to stay
+    correct when someone adds a twelfth scenario to that file.
+    """
+    result = subprocess.run(
+        # `-o addopts=` clears pytest.ini's addopts for this call. Without it
+        # the ini's own -v cancels the -q that makes --collect-only print bare
+        # node ids, and the list comes back empty; it also keeps a collection
+        # from touching the coverage report or the tracing options.
+        [sys.executable, "-m", "pytest", "-o", "addopts=", MOCK_SUITE, "--collect-only", "-q"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    return [
+        line.strip()
+        for line in result.stdout.splitlines()
+        if line.strip().startswith(f"{MOCK_SUITE}::")
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Runs
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Run:
+    run_id: str
+    mode: str
+    directory: Path
+    status: str = "running"
+    scenario: dict | None = None
+    feature: str | None = None
+    tests: list[dict] = field(default_factory=list)
+    steps: list[dict] = field(default_factory=list)
+    trace: str | None = None
+    report: str | None = None
+    error: str | None = None
+    #: the exact pytest invocation, copy-pasteable from the repo root
+    command: str | None = None
+    #: tail of that invocation's stdout+stderr
+    output: str | None = None
+    exit_code: int | None = None
+    started_at: float = field(default_factory=time.time)
+    duration: float | None = None
+
+    def trace_command(self) -> str | None:
+        """The command to replay this run, copy-pasteable from the repo root."""
+        if not self.trace:
+            return None
+        path = (self.directory / self.trace).relative_to(ROOT)
+        return f"playwright show-trace {path.as_posix()}"
+
+    def to_json(self) -> dict:
+        return {
+            "runId": self.run_id,
+            "mode": self.mode,
+            "status": self.status,
+            "scenario": self.scenario,
+            "feature": self.feature,
+            "tests": self.tests,
+            "steps": self.steps,
+            "trace": self.trace,
+            "traceCommand": self.trace_command(),
+            "report": self.report,
+            "error": self.error,
+            "command": self.command,
+            "output": self.output,
+            "exitCode": self.exit_code,
+            "duration": self.duration,
+        }
+
+
+class RunRegistry:
+    """In-memory registry of runs, with a one-at-a-time guard.
+
+    Runs drive a real browser against a real server; letting two overlap would
+    make their traces and their /api/stats interception fight each other, so a
+    second request is refused rather than quietly queued.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._runs: dict[str, Run] = {}
+        self._active: str | None = None
+
+    def get(self, run_id: str) -> Run | None:
+        with self._lock:
+            return self._runs.get(run_id)
+
+    def active(self) -> str | None:
+        with self._lock:
+            return self._active
+
+    def start(self, mode: str, *, scenario: dict | None = None,
+              nodeids: list[str] | None = None) -> Run:
+        with self._lock:
+            if self._active is not None:
+                raise RuntimeError(f"run {self._active} is still in progress")
+            run_id = f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
+            directory = RUNS_DIR / run_id
+            directory.mkdir(parents=True, exist_ok=True)
+            run = Run(run_id=run_id, mode=mode, directory=directory, scenario=scenario)
+            self._runs[run_id] = run
+            self._active = run_id
+
+        thread = threading.Thread(
+            target=self._execute, args=(run, nodeids or []), daemon=True
+        )
+        thread.start()
+        return run
+
+    def _execute(self, run: Run, nodeids: list[str]) -> None:
+        try:
+            _execute_run(run, nodeids)
+        except Exception as exc:  # never leave the page polling forever
+            run.status = "error"
+            run.error = f"{type(exc).__name__}: {exc}"
+        finally:
+            run.duration = round(time.time() - run.started_at, 2)
+            with self._lock:
+                self._active = None
+
+
+registry = RunRegistry()
+
+
+def _execute_run(run: Run, nodeids: list[str]) -> None:
+    artifacts = run.directory / "artifacts"
+    report_log = run.directory / "report.jsonl"
+    steps_log = run.directory / "steps.jsonl"
+    html_report = run.directory / "report.html"
+
+    argv = [
+        sys.executable, "-m", "pytest",
+        # Force artifacts on even for a *passing* run: pytest.ini keeps
+        # tracing at retain-on-failure for speed, but the Studio's whole
+        # promise is "there is a trace of what just happened".
+        "--tracing=on", "--screenshot=on", "--video=on",
+        f"--output={artifacts}",
+        f"--report-log={report_log}",
+        f"--html={html_report}", "--self-contained-html",
+        # A studio run must report the truth, not a rerun-laundered green;
+        # and it must not overwrite the project's own coverage report.
+        "--reruns", "0", "--no-cov",
+        "-p", "no:cacheprovider",
+        # The output is shown verbatim in a <pre>, not in a terminal.
+        "--color=no",
+        # Explicitly verbose rather than inheriting whatever pytest.ini's
+        # addopts happen to net out to: the page shows this output verbatim,
+        # and one line per test is what makes "it really ran" visible.
+        "-v",
+    ]
+    env_extra = {}
+
+    if run.mode == "scenario":
+        feature_path = run.directory / "scenario.feature"
+        feature_text = render_feature(run.scenario)
+        feature_path.write_text(feature_text, encoding="utf-8")
+        run.feature = feature_text
+        argv += ["-p", "studio.bdd_report_plugin", BDD_SUITE]
+        env_extra["STUDIO_FEATURE"] = str(feature_path)
+        env_extra["STUDIO_STEPS_LOG"] = str(steps_log)
+    else:
+        argv += nodeids
+
+    env = {**os.environ, **env_extra}
+    # Published before the subprocess starts, so the page can show what it is
+    # waiting on while the run is still in flight.
+    run.command = _command_line(argv, env_extra)
+
+    completed = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, env=env)
+
+    run.exit_code = completed.returncode
+    run.output = _tail(f"{completed.stdout or ''}{completed.stderr or ''}")
+    run.tests = _read_test_reports(report_log)
+    run.steps = _read_step_reports(steps_log)
+    run.trace = _find_artifact(artifacts, "trace.zip")
+    run.report = "report.html" if html_report.exists() else None
+
+    if run.tests:
+        run.status = "passed" if all(t["outcome"] == "passed" for t in run.tests) else "failed"
+    else:
+        run.status = "error"
+        # No test reports at all: pytest never got as far as running anything
+        # (a collection error, a bad option). The output pane carries the
+        # detail; this is just the headline.
+        run.error = f"no tests ran — pytest exited with {completed.returncode}"
+
+
+def _command_line(argv: list[str], env_extra: dict[str, str]) -> str:
+    """The invocation as a shell would spell it, environment prefix included.
+
+    Shown on the page and meant to be pasted into a terminal: reproducing a
+    studio run by hand should never require reading this module.
+    """
+    env_prefix = "".join(f"{key}={shlex.quote(value)} " for key, value in env_extra.items())
+    return env_prefix + shlex.join(argv)
+
+
+def _tail(output: str) -> str:
+    """Last MAX_OUTPUT_LINES lines, then hard-capped by character count."""
+    lines = _ANSI.sub("", output).splitlines()
+    clipped = len(lines) > MAX_OUTPUT_LINES
+    text = "\n".join(lines[-MAX_OUTPUT_LINES:])
+    if len(text) > MAX_OUTPUT_CHARS:
+        text = text[-MAX_OUTPUT_CHARS:]
+        clipped = True
+    return ("[... earlier output trimmed ...]\n" + text) if clipped else text
+
+
+def _read_test_reports(report_log: Path) -> list[dict]:
+    if not report_log.exists():
+        return []
+    # A test contributes a `call` row, plus a `setup`/`teardown` row when one
+    # of those phases is what failed (a fixture error never reaches `call`).
+    merged: dict[str, dict] = {}
+    for line in report_log.read_text(encoding="utf-8").splitlines():
+        event = json.loads(line)
+        if event.get("$report_type") != "TestReport":
+            continue
+        if event.get("when") != "call" and event.get("outcome") != "failed":
+            continue
+        test = {
+            "nodeid": event["nodeid"],
+            "outcome": event["outcome"],
+            "duration": round(event.get("duration") or 0.0, 3),
+            "error": _longrepr_text(event.get("longrepr")),
+        }
+        existing = merged.get(test["nodeid"])
+        if existing is None or existing["outcome"] == "passed":
+            merged[test["nodeid"]] = test
+    return list(merged.values())
+
+
+def _longrepr_text(longrepr: object) -> str | None:
+    if longrepr is None:
+        return None
+    if isinstance(longrepr, str):
+        return longrepr
+    if isinstance(longrepr, dict):
+        reprcrash = longrepr.get("reprcrash") or {}
+        return reprcrash.get("message") or str(longrepr.get("sections") or "") or None
+    return str(longrepr)
+
+
+def _read_step_reports(steps_log: Path) -> list[dict]:
+    if not steps_log.exists():
+        return []
+    return [json.loads(line) for line in steps_log.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def display_path(path: Path) -> str:
+    """Repo-relative when possible, so the page shows a path someone can paste
+    straight into a pytest command."""
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def resolve_artifact(directory: Path, relative: str) -> Path | None:
+    """Resolve one artifact path inside a run directory, or None.
+
+    The security half of the download endpoint: the resolved path has to stay
+    *inside* the run directory, so a `..` in the URL cannot walk out of it.
+    """
+    try:
+        target = (directory / relative).resolve()
+    except (OSError, ValueError):
+        return None
+    if directory.resolve() not in target.parents or not target.is_file():
+        return None
+    return target
+
+
+def _find_artifact(root: Path, filename: str) -> str | None:
+    """First matching artifact, as a path relative to the *run* directory —
+    which is what both the download endpoint and Run.trace_command expect."""
+    if not root.exists():
+        return None
+    for path in sorted(root.rglob(filename)):
+        return path.relative_to(root.parent).as_posix()
+    return None

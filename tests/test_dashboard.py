@@ -1,24 +1,7 @@
-import time
-
 from playwright.sync_api import Page, Route, expect
 
 from pages.dashboard_page import DashboardPage
-
-
-def _wait_for_intercepted_route(page: Page, pending: dict, timeout_ms: int = 5_000) -> Route:
-    """Block until page.route() has actually intercepted the request.
-
-    page.goto() resolves on the `load` event, which carries no guarantee that
-    the route handler has already run — reading pending["route"] straight
-    after open() is a race. Every Playwright call pumps the event loop, so
-    this polls the real condition instead of assuming it.
-    """
-    deadline = time.monotonic() + timeout_ms / 1000
-    while "route" not in pending:
-        if time.monotonic() > deadline:
-            raise AssertionError("the /api/stats request was never intercepted")
-        page.wait_for_timeout(50)
-    return pending["route"]
+from tests.conftest import wait_for_intercepted_route
 
 
 def test_dashboard_uses_real_backend_when_unmocked(dashboard: DashboardPage):
@@ -137,7 +120,7 @@ def test_dashboard_shows_loading_state_while_request_is_pending(dashboard: Dashb
     page.route("**/api/stats", lambda route: pending.__setitem__("route", route))
 
     dashboard.open()
-    route = _wait_for_intercepted_route(page, pending)
+    route = wait_for_intercepted_route(page, pending)
     expect(dashboard.loading).to_be_visible()
 
     route.fulfill(json={"labels": ["A"], "values": [7]})

@@ -136,6 +136,15 @@ perf/run_perf.sh concurrency -Jthreads=100 -Jrendezvous=100 -Jloops=20
 
 首次跑某个场景时没有基线，门禁自动跳过，输出里会打印 `[gate off: ...]`。
 
+## 压测范围：只压被测应用
+
+被压的是 `server/app.py` 的 `/api/*`。**`studio/` 的 `/studio/api/*` 不在压测范围
+内**，也不该被加进任何 `.jmx`：它是本地工装（低代码 Studio 的运行器，见
+[`STUDIO.md`](STUDIO.md)），一次请求会 fork 一个 pytest 进程，压它测的是
+pytest 的启动开销而不是应用。这也正是它挂在 `StudioHandler(DemoApiHandler)`
+子类上、而不是加进 `server/app.py` 的原因——"新接口配新场景"这条规则
+（见下）针对的是被测应用的接口面，把工装接口混进去只会污染基线。
+
 ## 结果有效性边界
 
 以下限制会实质影响数字的解读，看报告前必须知道：

@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mock Scenario Studio</title>
+<script>
+  if (!localStorage.getItem('demo_auth_token')) {
+    window.location.replace('../login.html');
+  }
+</script>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 1100px; margin: 32px auto; padding: 0 12px; color: #222; }
+  h1 { font-size: 20px; }
+  h2 { font-size: 15px; margin: 18px 0 6px; }
+  h3 { font-size: 13px; margin: 10px 0 4px; color: #555; text-transform: uppercase; letter-spacing: .06em; }
+  section { margin-bottom: 20px; padding: 12px; border: 1px solid #ddd; border-radius: 6px; }
+  button { padding: 5px 10px; cursor: pointer; }
+  input[type="text"] { padding: 4px 6px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .toolbar label { font-weight: bold; }
+  .columns { display: grid; grid-template-columns: minmax(260px, 0.8fr) minmax(440px, 1.7fr); gap: 16px; }
+  .palette-list { list-style: none; margin: 0; padding: 0; }
+  .palette-step { border: 1px solid #e3e3e3; border-left-width: 4px; border-radius: 4px; padding: 6px 8px; margin-bottom: 6px; font-size: 13px; }
+  .palette-step label { margin-left: 6px; margin-right: 3px; color: #666; font-size: 12px; }
+  .palette-step input { width: 96px; }
+  .palette-step button { margin-left: 6px; }
+  .sentence { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+  /* Swimlanes: one column per actor, so a scenario reads top-to-bottom as a
+     sequence diagram — which is the point of ordering steps at all. */
+  .lane-head, .timeline-step { display: grid; grid-template-columns: 24px 52px 52px 52px minmax(0, 1fr) 58px 148px; gap: 6px; align-items: center; }
+  .lane-head { font-size: 9px; color: #777; text-transform: uppercase; letter-spacing: .04em; padding: 0 4px 4px; overflow: hidden; }
+  .timeline { list-style: none; margin: 0; padding: 0; }
+  .timeline-step { border: 1px solid #e3e3e3; border-radius: 4px; padding: 6px 4px; margin-bottom: 4px; font-size: 13px; }
+  .idx { color: #888; font-size: 11px; text-align: center; }
+  .lane-cell { height: 20px; border-left: 1px dashed #ddd; }
+  .lane-cell.active { border-left: 3px solid currentColor; background: rgba(74, 125, 252, .10); border-radius: 2px; }
+  .lane-mock { color: #b26a00; }
+  .lane-browser { color: #4a7dfc; }
+  .lane-assert { color: #0a7d46; }
+  .kw { font-weight: bold; font-size: 11px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 2px; justify-content: flex-end; }
+  .controls button { font-size: 10px; padding: 1px 4px; line-height: 1.4; }
+  .status { font-size: 12px; text-align: right; }
+  .status[data-status="passed"] { color: #0a7d46; }
+  .status[data-status="failed"] { color: #b00020; }
+  .status[data-status="skipped"] { color: #999; }
+  .status[data-status="pending"] { color: #bbb; }
+  pre { background: #fafafa; border: 1px solid #eee; border-radius: 4px; padding: 8px; font-size: 12px; overflow-x: auto; }
+  #run-status { font-weight: bold; }
+  [data-status="failed"], [data-status="error"], [data-status="invalid"] { color: #b00020; }
+  [data-status="passed"] { color: #0a7d46; }
+  [data-status="running"] { color: #b26a00; }
+  .test-results { list-style: none; margin: 6px 0; padding: 0; }
+  .test-result { display: grid; grid-template-columns: 16px minmax(0, 1fr) 58px; gap: 6px;
+                 align-items: center; font-size: 12px; padding: 1px 0; }
+  #run-output { max-height: 320px; overflow-y: auto; white-space: pre; }
+  #run-command { white-space: pre-wrap; word-break: break-all; }
+  .suite-list { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+  .suite-list li { padding: 2px 0; }
+  .suite-list label { margin-left: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+  .empty-hint { color: #888; font-size: 13px; }
+  .tab[aria-pressed="true"] { font-weight: bold; border-bottom: 2px solid #4a7dfc; }
+</style>
+<script src="../i18n/catalog.js"></script>
+<script src="../i18n/apply.js"></script>
+<script src="../studio/steps.js"></script>
+</head>
+<body>
+  <h1>Mock Scenario Studio</h1>
+  <p class="empty-hint">
+    Compose a mock scenario on the timeline, run it as a real pytest-bdd
+    feature, and open its Playwright trace.
+    <a href="../dashboard.html">Dashboard</a> · <a href="../demo.html">Demo</a>
+  </p>
+
+  <p>
+    <button type="button" class="tab" id="tab-compose" data-testid="tab-compose"
+            aria-pressed="true" data-i18n="studioTabCompose">Compose scenario</button>
+    <button type="button" class="tab" id="tab-suite" data-testid="tab-suite"
+            aria-pressed="false" data-i18n="studioTabSuite">Existing mock tests</button>
+  </p>
+
+  <section id="compose-panel" data-testid="compose-panel">
+    <div class="toolbar">
+      <label for="scenario-name" data-i18n="studioScenarioName">Scenario name</label>
+      <input type="text" id="scenario-name" data-testid="scenario-name" size="34"
+             value="Loading state stays visible until released">
+      <button type="button" id="run-scenario" data-testid="run-scenario" data-i18n="studioRun">Run scenario</button>
+      <button type="button" id="clear-timeline" data-testid="clear-timeline" data-i18n="studioClear">Clear timeline</button>
+      <button type="button" id="save-feature" data-testid="save-feature" data-i18n="studioSaveFeature">Save as feature</button>
+      <button type="button" id="open-trace" data-testid="open-trace" data-i18n="studioOpenTrace">Open trace</button>
+    </div>
+
+    <div class="columns">
+      <div>
+        <h2>Step palette</h2>
+        <div id="step-palette" data-testid="step-palette"></div>
+      </div>
+      <div>
+        <h2>Timeline</h2>
+        <div class="lane-head">
+          <span></span><span>mock</span><span>browser</span><span>assert</span>
+          <span></span><span></span><span></span>
+        </div>
+        <ol id="timeline" class="timeline" data-testid="timeline"></ol>
+        <p id="timeline-empty" class="empty-hint" data-testid="timeline-empty">
+          No steps yet — add one from the palette.
+        </p>
+      </div>
+    </div>
+
+    <h2>Gherkin</h2>
+    <pre id="gherkin-preview" data-testid="gherkin-preview"></pre>
+
+  </section>
+
+  <section id="suite-panel" data-testid="suite-panel" style="display: none;">
+    <h2>Existing mock tests</h2>
+    <p class="empty-hint">
+      Collected from tests/test_dashboard.py by pytest itself — see MOCK_TESTS.md.
+    </p>
+    <ul id="suite-list" class="suite-list" data-testid="suite-list"></ul>
+    <p>
+      <button type="button" id="run-selected" data-testid="run-selected" data-i18n="studioRunSelected">Run selected tests</button>
+    </p>
+  </section>
+
+  <section id="result-panel" data-testid="result-panel">
+    <h2>Result</h2>
+    <p id="run-status" data-testid="run-status" data-status="idle">idle</p>
+    <ul id="test-results" class="test-results" data-testid="test-results"></ul>
+    <pre id="run-error" data-testid="run-error" style="display: none;"></pre>
+    <p id="trace-path" data-testid="trace-path"></p>
+    <p><a id="report-link" data-testid="report-link" style="display: none;" target="_blank">HTML report</a></p>
+    <p id="save-result" data-testid="save-result"></p>
+
+    <h3>Executed command</h3>
+    <pre id="run-command" data-testid="run-command"></pre>
+
+    <h3>pytest output</h3>
+    <pre id="run-output" data-testid="run-output"></pre>
+  </section>
+
+  <script>
+    var STEPS = window.STUDIO_STEPS;
+    var LANES = ['mock', 'browser', 'assert'];
+    var KEYWORDS = ['Given', 'When', 'Then'];
+    var PLACEHOLDER = /\{(\w+)(?::\w+)?\}/g;
+    var DEFAULT_SCENARIO_NAME = 'Untitled studio scenario';
+    var MAX_NAME_LENGTH = 120;
+    var POLL_INTERVAL_MS = 300;
+
+    // The composed scenario: an ordered list of {id, params}. Order is the
+    // whole point — "held pending" before the navigation, "release" after the
+    // loading assertion — so nothing here ever sorts or regroups it.
+    var timeline = [];
+    var stepResults = [];
+    var runFinished = false;
+    var lastRun = null;
+
+    function el(id) { return document.getElementById(id); }
+    function copy(key) { return (window.I18N && window.I18N[key]) || key; }
+
+    function defaultFor(spec, name) {
+      for (var i = 0; i < spec.params.length; i++) {
+        if (spec.params[i].name === name) return spec.params[i].default;
+      }
+      return '';
+    }
+
+    // Mirrors pages/studio_steps.single_line(): a Gherkin step is a line, so a
+    // parameter carrying a line break would become extra steps. The Python
+    // renderer flattens it; this has to flatten it identically or the preview
+    // stops matching the .feature file that actually runs. The character set
+    // is Python's str.splitlines(), with \r\n counted as one break.
+    function singleLine(value) {
+      // splitlines() treats a break at the very end as a terminator rather
+      // than as a separator ("a\n" -> ["a"], not ["a", ""]), so that one is
+      // dropped before splitting. Without it the preview grows a trailing
+      // space the .feature file does not have.
+      var BREAK = /\r\n|[\n\r\u000b\u000c\u001c\u001d\u001e\u0085\u2028\u2029]/g;
+      var TRAILING_BREAK = /(?:\r\n|[\n\r\u000b\u000c\u001c\u001d\u001e\u0085\u2028\u2029])$/;
+      return String(value).replace(TRAILING_BREAK, '').split(BREAK).join(' ');
+    }
+
+    // Mirrors pages/studio_steps.render_step(): the preview has to be exactly
+    // what the backend writes into the .feature file, or the page would be
+    // lying about what it is going to run.
+    function renderSentence(stepId, params) {
+      var spec = STEPS[stepId];
+      return spec.template.replace(PLACEHOLDER, function (match, name) {
+        var value = params && params[name] !== undefined ? params[name] : defaultFor(spec, name);
+        return singleLine(value);
+      });
+    }
+
+    function scenarioName() {
+      var raw = el('scenario-name').value || '';
+      var name = raw.split(/\s+/).filter(Boolean).join(' ');
+      return (name || DEFAULT_SCENARIO_NAME).slice(0, MAX_NAME_LENGTH);
+    }
+
+    // Mirrors studio/runner.render_feature().
+    function gherkinText() {
+      var lines = [
+        'Feature: Low-code studio scenario',
+        '',
+        '  # Generated by the Mock Scenario Studio (web/studio.html).',
+        '  # Steps come from web/studio/steps.js; the implementations live in',
+        '  # tests/test_dashboard_bdd.py.',
+        '  Scenario: ' + scenarioName()
+      ];
+      timeline.forEach(function (item) {
+        lines.push('    ' + STEPS[item.id].keyword + ' ' + renderSentence(item.id, item.params));
+      });
+      return lines.join('\n') + '\n';
+    }
+
+    function scenarioPayload() {
+      return {
+        name: scenarioName(),
+        steps: timeline.map(function (item) { return { id: item.id, params: item.params }; })
+      };
+    }
+
+    // --- palette ---------------------------------------------------------
+
+    function makeButton(label, onClick) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.addEventListener('click', onClick);
+      return button;
+    }
+
+    function renderPalette() {
+      var host = el('step-palette');
+      host.innerHTML = '';
+      KEYWORDS.forEach(function (keyword) {
+        var ids = Object.keys(STEPS).filter(function (id) { return STEPS[id].keyword === keyword; });
+        if (!ids.length) return;
+        var heading = document.createElement('h3');
+        heading.textContent = keyword;
+        host.appendChild(heading);
+        var list = document.createElement('ul');
+        list.className = 'palette-list';
+        ids.forEach(function (id) { list.appendChild(renderPaletteStep(id)); });
+        host.appendChild(list);
+      });
+    }
+
+    function renderPaletteStep(id) {
+      var spec = STEPS[id];
+      var item = document.createElement('li');
+      // A test id per step, rather than one shared id plus a CSS attribute
+      // filter: it keeps the page object off tier-4 locators entirely.
+      item.dataset.testid = 'palette-step-' + id;
+      item.dataset.stepId = id;
+      item.className = 'palette-step lane-' + spec.lane;
+
+      var sentence = document.createElement('span');
+      sentence.className = 'sentence';
+      sentence.textContent = spec.template;
+      item.appendChild(sentence);
+
+      spec.params.forEach(function (param) {
+        var inputId = 'param-' + id + '-' + param.name;
+        var label = document.createElement('label');
+        label.setAttribute('for', inputId);
+        label.textContent = param.name;
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.id = inputId;
+        input.value = param.default;
+        input.title = param.hint;
+        item.appendChild(label);
+        item.appendChild(input);
+      });
+
+      item.appendChild(makeButton(copy('studioAddStep'), function () { addStep(id); }));
+      return item;
+    }
+
+    function addStep(id) {
+      var params = {};
+      STEPS[id].params.forEach(function (param) {
+        params[param.name] = el('param-' + id + '-' + param.name).value;
+      });
+      timeline.push({ id: id, params: params });
+      resetResults();
+      render();
+    }
+
+    // --- timeline --------------------------------------------------------
+
+    function moveStep(index, delta) {
+      var target = index + delta;
+      if (target < 0 || target >= timeline.length) return;
+      var moved = timeline[index];
+      timeline[index] = timeline[target];
+      timeline[target] = moved;
+      resetResults();
+      render();
+    }
+
+    function removeStep(index) {
+      timeline.splice(index, 1);
+      resetResults();
+      render();
+    }
+
+    function clearTimeline() {
+      timeline = [];
+      resetResults();
+      render();
+    }
+
+    function statusOf(index) {
+      var result = stepResults[index];
+      if (result) return result.outcome;
+      return runFinished ? 'skipped' : 'pending';
+    }
+
+    function renderTimeline() {
+      var host = el('timeline');
+      host.innerHTML = '';
+      timeline.forEach(function (item, index) {
+        var spec = STEPS[item.id];
+        var row = document.createElement('li');
+        row.dataset.testid = 'timeline-step';
+        row.dataset.stepId = item.id;
+        row.dataset.lane = spec.lane;
+        row.className = 'timeline-step lane-' + spec.lane;
+
+        var position = document.createElement('span');
+        position.className = 'idx';
+        position.textContent = String(index + 1);
+        row.appendChild(position);
+
+        LANES.forEach(function (lane) {
+          var cell = document.createElement('span');
+          cell.className = 'lane-cell' + (lane === spec.lane ? ' active' : '');
+          row.appendChild(cell);
+        });
+
+        var text = document.createElement('span');
+        text.className = 'sentence';
+        var keyword = document.createElement('span');
+        keyword.dataset.testid = 'timeline-keyword';
+        keyword.className = 'kw';
+        keyword.textContent = spec.keyword;
+        var sentence = document.createElement('span');
+        sentence.dataset.testid = 'timeline-sentence';
+        sentence.textContent = renderSentence(item.id, item.params);
+        text.appendChild(keyword);
+        text.appendChild(document.createTextNode(' '));
+        text.appendChild(sentence);
+        row.appendChild(text);
+
+        var status = document.createElement('span');
+        status.dataset.testid = 'timeline-status';
+        var outcome = statusOf(index);
+        status.dataset.status = outcome;
+        status.className = 'status';
+        status.textContent = statusLabel(index, outcome);
+        var result = stepResults[index];
+        if (result && result.error) status.title = result.error;
+        row.appendChild(status);
+
+        var controls = document.createElement('span');
+        controls.className = 'controls';
+        controls.appendChild(makeButton(copy('studioMoveUp'), function () { moveStep(index, -1); }));
+        controls.appendChild(makeButton(copy('studioMoveDown'), function () { moveStep(index, 1); }));
+        controls.appendChild(makeButton(copy('studioRemoveStep'), function () { removeStep(index); }));
+        row.appendChild(controls);
+
+        host.appendChild(row);
+      });
+      el('timeline-empty').style.display = timeline.length ? 'none' : 'block';
+    }
+
+    function statusLabel(index, outcome) {
+      var result = stepResults[index];
+      var glyph = { passed: '✓', failed: '✗', skipped: '–', pending: '○' }[outcome] || outcome;
+      if (result && result.duration !== null && result.duration !== undefined) {
+        return glyph + ' ' + result.duration + 's';
+      }
+      return glyph;
+    }
+
+    function render() {
+      renderTimeline();
+      el('gherkin-preview').textContent = gherkinText();
+    }
+
+    // --- running ---------------------------------------------------------
+
+    function resetResults() {
+      stepResults = [];
+      runFinished = false;
+      el('test-results').innerHTML = '';
+      el('run-command').textContent = '';
+      el('run-output').textContent = '';
+    }
+
+    function setRunStatus(status, message) {
+      var node = el('run-status');
+      node.dataset.status = status;
+      node.textContent = message || status;
+    }
+
+    function showError(message) {
+      var node = el('run-error');
+      if (message) {
+        node.textContent = message;
+        node.style.display = 'block';
+      } else {
+        node.textContent = '';
+        node.style.display = 'none';
+      }
+    }
+
+    async function postJson(url, body) {
+      var response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      return { ok: response.ok, status: response.status, data: await response.json() };
+    }
+
+    async function startRun(body) {
+      resetResults();
+      showError('');
+      el('save-result').textContent = '';
+      el('trace-path').textContent = '';
+      el('report-link').style.display = 'none';
+      setRunStatus('running');
+      render();
+      try {
+        var result = await postJson('/studio/api/run', body);
+        if (!result.ok) {
+          setRunStatus('error');
+          showError(result.data.error || ('HTTP ' + result.status));
+          return;
+        }
+        pollRun(result.data.runId);
+      } catch (err) {
+        setRunStatus('error');
+        showError(String(err));
+      }
+    }
+
+    async function pollRun(runId) {
+      try {
+        var response = await fetch('/studio/api/runs/' + encodeURIComponent(runId));
+        var data = await response.json();
+        if (!response.ok) {
+          setRunStatus('error');
+          showError(data.error || ('HTTP ' + response.status));
+          return;
+        }
+        applyRun(data);
+        if (data.status === 'running') {
+          window.setTimeout(function () { pollRun(runId); }, POLL_INTERVAL_MS);
+        }
+      } catch (err) {
+        setRunStatus('error');
+        showError(String(err));
+      }
+    }
+
+    // In "existing mock tests" mode there is no timeline to light up, so the
+    // per-test rows plus the command and the raw pytest output are the only
+    // evidence that anything ran at all. They are rendered in both modes.
+    function renderTestResults(tests) {
+      var host = el('test-results');
+      host.innerHTML = '';
+      tests.forEach(function (test) {
+        var row = document.createElement('li');
+        row.dataset.testid = 'test-result';
+        row.dataset.outcome = test.outcome;
+        row.className = 'test-result';
+
+        var mark = document.createElement('span');
+        mark.className = 'status';
+        mark.dataset.status = test.outcome;
+        mark.textContent = { passed: '\u2713', failed: '\u2717' }[test.outcome] || '?';
+
+        var name = document.createElement('span');
+        name.className = 'sentence';
+        name.textContent = test.nodeid;
+
+        var took = document.createElement('span');
+        took.className = 'idx';
+        took.textContent = test.duration + 's';
+
+        row.appendChild(mark);
+        row.appendChild(name);
+        row.appendChild(took);
+        host.appendChild(row);
+      });
+    }
+
+    function applyRun(data) {
+      lastRun = data;
+      stepResults = data.steps || [];
+      runFinished = data.status !== 'running';
+      setRunStatus(data.status, runStatusText(data));
+      renderTestResults(data.tests || []);
+      // The command is published before pytest starts, so it shows up on the
+      // first poll — while the run is still going.
+      el('run-command').textContent = data.command || '';
+      el('run-output').textContent = data.output || '';
+      showError(runErrorText(data));
+      el('trace-path').textContent = data.traceCommand || '';
+      var report = el('report-link');
+      if (data.report) {
+        report.href = '/studio/api/runs/' + encodeURIComponent(data.runId) + '/artifacts/' + data.report;
+        report.style.display = 'inline';
+      } else {
+        report.style.display = 'none';
+      }
+      render();
+    }
+
+    function runStatusText(data) {
+      if (data.status === 'running') return 'running';
+      var suffix = data.duration !== null && data.duration !== undefined ? ' in ' + data.duration + 's' : '';
+      return data.status + suffix;
+    }
+
+    function runErrorText(data) {
+      if (data.error) return data.error;
+      var failures = (data.tests || []).filter(function (test) { return test.outcome !== 'passed' && test.error; });
+      return failures.map(function (test) { return test.nodeid + '\n' + test.error; }).join('\n\n');
+    }
+
+    async function runScenario() {
+      if (!timeline.length) {
+        setRunStatus('invalid');
+        showError('Add at least one step before running.');
+        return;
+      }
+      await startRun({ mode: 'scenario', scenario: scenarioPayload() });
+    }
+
+    async function saveFeature() {
+      el('save-result').textContent = '';
+      try {
+        var result = await postJson('/studio/api/scenarios/save', { scenario: scenarioPayload() });
+        if (!result.ok) {
+          showError(result.data.error || ('HTTP ' + result.status));
+          return;
+        }
+        el('save-result').textContent = result.data.path;
+      } catch (err) {
+        showError(String(err));
+      }
+    }
+
+    async function openTrace() {
+      if (!lastRun || !lastRun.runId) {
+        showError('Run a scenario first — there is no trace yet.');
+        return;
+      }
+      try {
+        var result = await postJson('/studio/api/runs/' + encodeURIComponent(lastRun.runId) + '/trace/open', {});
+        if (!result.ok) showError(result.data.error || ('HTTP ' + result.status));
+      } catch (err) {
+        showError(String(err));
+      }
+    }
+
+    // --- existing mock tests ---------------------------------------------
+
+    async function loadSuite() {
+      var host = el('suite-list');
+      try {
+        var response = await fetch('/studio/api/suites');
+        var data = await response.json();
+        host.innerHTML = '';
+        (data.tests || []).forEach(function (nodeid, index) {
+          var row = document.createElement('li');
+          var inputId = 'suite-test-' + index;
+          var checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.id = inputId;
+          checkbox.value = nodeid;
+          var label = document.createElement('label');
+          label.setAttribute('for', inputId);
+          label.textContent = nodeid;
+          row.appendChild(checkbox);
+          row.appendChild(label);
+          host.appendChild(row);
+        });
+      } catch (err) {
+        showError(String(err));
+      }
+    }
+
+    function selectedNodeIds() {
+      return Array.prototype.slice
+        .call(el('suite-list').querySelectorAll('input[type="checkbox"]'))
+        .filter(function (checkbox) { return checkbox.checked; })
+        .map(function (checkbox) { return checkbox.value; });
+    }
+
+    async function runSelected() {
+      var nodeids = selectedNodeIds();
+      if (!nodeids.length) {
+        setRunStatus('invalid');
+        showError('Select at least one test.');
+        return;
+      }
+      timeline = [];
+      await startRun({ mode: 'tests', nodeids: nodeids });
+    }
+
+    // --- tabs ------------------------------------------------------------
+
+    function showTab(name) {
+      el('compose-panel').style.display = name === 'compose' ? 'block' : 'none';
+      // BUG: the run result is hidden along with the compose panel, so a run
+      // started from the "existing mock tests" tab shows the user nothing.
+      el('result-panel').style.display = name === 'compose' ? 'block' : 'none';
+      el('suite-panel').style.display = name === 'suite' ? 'block' : 'none';
+      el('tab-compose').setAttribute('aria-pressed', String(name === 'compose'));
+      el('tab-suite').setAttribute('aria-pressed', String(name === 'suite'));
+      if (name === 'suite') loadSuite();
+    }
+
+    el('tab-compose').addEventListener('click', function () { showTab('compose'); });
+    el('tab-suite').addEventListener('click', function () { showTab('suite'); });
+    el('run-scenario').addEventListener('click', runScenario);
+    el('clear-timeline').addEventListener('click', clearTimeline);
+    el('save-feature').addEventListener('click', saveFeature);
+    el('open-trace').addEventListener('click', openTrace);
+    el('run-selected').addEventListener('click', runSelected);
+    el('scenario-name').addEventListener('input', render);
+
+    renderPalette();
+    render();
+  </script>
+</body>
+</html>

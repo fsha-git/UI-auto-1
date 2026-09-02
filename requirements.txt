@@ -1,5 +1,6 @@
 pytest
 pytest-playwright
+pytest-bdd
 pytest-reportlog
 pytest-rerunfailures
 pytest-timeout

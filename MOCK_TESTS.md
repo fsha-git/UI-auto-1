@@ -42,6 +42,35 @@
 
 正确写法（见测试 #10）：在 route 回调里**只捕获 `Route` 对象、不调用任何完成方法**（`fulfill`/`continue_`/`abort`），这样请求会一直挂起；测试代码断言完加载状态可见后，再显式调用 `route.fulfill()` 把请求"放行"。这是 Playwright 官方推荐的、用来测试加载态/骨架屏的标准模式。
 
+## 也可以在低代码页面里编排和运行
+
+这 11 个场景用到的全部 mock 手法——自定义数据、空数据、HTTP 状态码、`abort()`、
+坏 JSON、挂起不放行、多份数据集轮换——都被拆成了固定步骤，收在
+[`web/studio/steps.js`](web/studio/steps.js) 里，可以在低代码可视化测试页面
+[`web/studio.html`](web/studio.html) 上按 BDD 结构和**时序**拼装、一键运行、
+回放 trace，完整说明见 [`STUDIO.md`](STUDIO.md)：
+
+```bash
+python -m studio --port 8100     # 浏览器打开 http://127.0.0.1:8100/studio.html
+```
+
+| 上表的手法 | Studio 步骤 |
+|---|---|
+| #2 自定义数据 | `Given the /api/stats endpoint returns labels "…" and values "…"` |
+| #3 空数据 | `Given the /api/stats endpoint returns no data` |
+| #4 HTTP 500 | `Given the /api/stats endpoint returns HTTP status {status}` |
+| #5 / #11 刷新换数据集 | `Given … returns the dataset sequence "A=1 \| A,B=1,2"` + `When I click the Refresh button` |
+| #6 连接级失败 | `Given the /api/stats endpoint aborts the connection` |
+| #7 坏 JSON | `Given the /api/stats endpoint returns the malformed body "…"` |
+| #10 加载中 | `Given the /api/stats endpoint is held pending` → `When I open the dashboard` → `Then the loading indicator is visible` → `When I release the pending /api/stats request …` |
+
+Studio 页面的"现有 Mock 用例"标签页还能直接勾选并一键运行本文件里的这 11 个用例
+本身——清单是用 `pytest --collect-only` 问 pytest 要的，不是这张表的副本。
+
+编排出来的场景可以"保存为 feature"落到 `tests/features/`，从此进入日常 `pytest`
+全量回归；执行实现在 [`tests/test_dashboard_bdd.py`](tests/test_dashboard_bdd.py)，
+每一步都只调用 `pages/dashboard_page.py` 的方法，和本文件里的手写用例走同一条链路。
+
 ## 如何运行
 
 ```bash
