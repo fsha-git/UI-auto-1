@@ -5,10 +5,9 @@
 #   docker compose run --rm all       上面全部 + 约定审计，一次跑完
 # 详见 DOCKER.md。
 
+# 只放真正共享的字段。build: 不在这里——每个 service 的 target 都不同，都要写
+# 完整的 build 块把锚点里的整个覆盖掉，留在这里就成了没人读的死配置。
 x-common: &common
-  build:
-    context: .
-    dockerfile: docker/Dockerfile
   volumes:
     # 绑定挂载整个仓库：报告、trace、视频直接落到宿主机的 reports/ 与
     # test-results/，不用再 docker cp；本地改代码也即时生效。

@@ -37,9 +37,13 @@ rm -f .docker-write-check
 
 task_pytest() {
     # PYTEST_ARGS 走 eval，好让 `-m "not perf"` 这种带引号的参数保持成一个词。
+    # eval 期间必须关掉 glob（set -f）：否则 `-k test_*` 里的 test_* 会被当前
+    # 目录的文件名展开，参数被悄悄改写成一串路径。事后无条件恢复。
     local -a extra=()
     if [ -n "${PYTEST_ARGS:-}" ]; then
+        set -f
         eval "extra=(${PYTEST_ARGS})"
+        set +f
     fi
     python -m pytest "${extra[@]}" "$@"
 }

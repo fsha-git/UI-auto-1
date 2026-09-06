@@ -7,7 +7,8 @@
 docker compose run --rm all
 ```
 
-一次跑完 pytest 全量套件 → 变异检测回归 → 约定审计 → JMeter 七类压测，中途失败不
+一次跑完 pytest 全量套件 → 变异检测回归 → 约定审计 → JMeter 压测（共 7 类计划，默认
+跑其中 6 类，30 分钟起步的 `soak` 要单独点名），中途失败不
 停，最后汇总失败清单。对应 [`AGENTS.md`](AGENTS.md) Verification 的第 1、2、3、4 步。
 
 ---
@@ -61,6 +62,14 @@ docker compose run --rm tests bash          # 进容器手动排查
 
 ```bash
 PYTEST_ARGS='-m "not perf"' docker compose run --rm tests
+```
+
+`PYTEST_ARGS` 的内容**不做通配符展开**，整串按引号切成参数原样交给 pytest。要用路径
+通配就写在命令行上，由你自己的 shell 展开（它的工作目录就是仓库根，展开结果是对的）：
+
+```bash
+docker compose run --rm tests tests/test_d*.py      # shell 展开，可以
+PYTEST_ARGS='tests/test_d*.py' docker compose run --rm tests   # 原样传给 pytest，不行
 ```
 
 ---
