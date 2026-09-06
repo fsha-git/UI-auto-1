@@ -1,0 +1,31 @@
+# 镜像 build context 的排除表。大体镜像 .gitignore，再加 .git/ 本身。
+.git/
+
+# 宿主机虚拟环境。必须排除：macOS 的 .venv/bin/python 是 Mach-O 二进制，但在
+# Linux 容器里 `[ -x .venv/bin/python ]` 仍然为真，perf/run_perf.sh 的解释器
+# 选择（PY=.venv/bin/python; [ -x "$PY" ] || PY=python3）会选中它然后崩掉。
+.venv/
+
+# Python 产物
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+
+# 测试产物（跑的时候由绑定挂载写回宿主机，不需要进镜像）
+reports/
+test-results/
+playwright-report/
+.triage-report-*.json
+.auth/
+
+# JMeter 产物
+*.jtl
+jmeter.log
+
+# 工具与本地文件
+.plan/
+.claude/
+127.0.0.1:*
+.DS_Store
+my_*.md

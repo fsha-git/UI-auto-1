@@ -1,0 +1,74 @@
+# 三平台通用的一键测试入口。四个 service 的命令在 macOS / Linux / Windows 上逐字相同。
+#   docker compose run --rm tests     全量 pytest
+#   docker compose run --rm triage    变异检测回归（比对 TRIAGE.md）
+#   docker compose run --rm perf      JMeter 压测
+#   docker compose run --rm all       上面全部 + 约定审计，一次跑完
+# 详见 DOCKER.md。
+
+x-common: &common
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  volumes:
+    # 绑定挂载整个仓库：报告、trace、视频直接落到宿主机的 reports/ 与
+    # test-results/，不用再 docker cp；本地改代码也即时生效。
+    - .:/work
+    # 匿名卷遮蔽宿主机的 .venv/。macOS 的 .venv/bin/python 是 Mach-O 二进制，
+    # 但在 Linux 容器里 `[ -x .venv/bin/python ]` 依然为真，会被
+    # perf/run_perf.sh 的解释器选择挑中然后崩掉。
+    - /work/.venv
+  # Chromium 在容器里默认只有 64MB 的 /dev/shm，会随机崩成看起来像 flaky 的失败。
+  shm_size: 1gb
+  # 默认 0:0（root）。macOS / Windows 的 Docker Desktop 会替你处理绑定挂载的属主；
+  # Linux 宿主机上要传自己的 UID/GID，否则 reports/ 里会留下 root 属主的文件：
+  #   HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose run --rm tests
+  user: "${HOST_UID:-0}:${HOST_GID:-0}"
+  # triage 会派生 30 个嵌套 pytest，perf 会派生 server 和 jmeter；用 init 收僵尸。
+  init: true
+  environment:
+    - PYTEST_ARGS
+    - PERF_PORT
+    - PERF_ACCOUNTS
+    - PERF_HISTORY
+    - PERF_MAX_REGRESSION_PCT
+
+services:
+  # 日常用的那个：Python + Chromium，不含 JDK/JMeter。
+  tests:
+    <<: *common
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: test
+    image: ui-auto-1:test
+    command: ["pytest"]
+
+  # 与 tests 同一个镜像，只是默认任务不同。
+  triage:
+    <<: *common
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: test
+    image: ui-auto-1:test
+    command: ["triage"]
+
+  # 多带一个 JDK 21 + JMeter（约 +400MB）。
+  perf:
+    <<: *common
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: perf
+    image: ui-auto-1:perf
+    command: ["perf"]
+
+  # 一键全量：pytest → triage → audit → perf，中途失败不停，最后汇总。
+  all:
+    <<: *common
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: perf
+    image: ui-auto-1:perf
+    command: ["all"]

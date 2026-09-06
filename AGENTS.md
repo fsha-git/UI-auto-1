@@ -313,6 +313,7 @@ in a follow-up:
 | `tests/test_dashboard.py` | `MOCK_TESTS.md` — it enumerates that file's scenarios one by one |
 | `web/studio.html`, `web/studio/steps.js`, `studio/`, `pages/studio_*.py`, or the BDD step definitions | `STUDIO.md` — step-library table, architecture, security boundary; a new step also updates the mapping table in `MOCK_TESTS.md` if it covers a technique listed there |
 | a new feature-area test file | new `bug_*` mutants + regenerated `TRIAGE.md` (§1), and the `web/bugs/` row in `README.md` |
+| `docker/`, `docker-compose.yml`, `requirements.txt`, or `.github/workflows/` | `DOCKER.md` — service table, arg passing, report paths, trade-offs; a `playwright==` bump also moves the base image tag in `docker/Dockerfile` |
 | a convention in this file (new rule, changed count, new trap) | `AGENTS.md` itself — including the examples above that name specific classes and scenario counts, which go stale silently |
 
 `TRIAGE.md` is the exception: it is **generated** by `scripts/triage.py` and is
@@ -353,6 +354,35 @@ perf/run_perf.sh performance -Jduration=15 -Jrampup=3
 #    in this same change; if a doc states counts, recount them from the code.
 git diff --stat        # code files with no matching doc row from §7? go back.
 ```
+
+### The containerized equivalent
+
+The same five steps run in Docker on macOS, Linux and Windows without a local
+Python, browser, JDK or JMeter — see [`DOCKER.md`](DOCKER.md):
+
+```bash
+docker compose run --rm all      # steps 1, 2, 3 and 4 in one go
+docker compose run --rm tests    # step 1 only
+docker compose run --rm triage   # step 2 only
+docker compose run --rm tests audit   # step 3 only
+```
+
+`.github/workflows/tests.yml` runs those same commands verbatim, so a CI
+failure reproduces locally with one line. The container is a convenience, not a
+replacement judgement: the pass/fail bar is still the one stated above, and the
+`--reruns 2` in `pytest.ini` still means "zero reruns", not "zero failures".
+
+Two constraints the container adds:
+
+- **The base image tag and `requirements.txt` are one version.** Bumping
+  `playwright==` means bumping the `mcr.microsoft.com/playwright/python:v…` tag
+  in `docker/Dockerfile` in the same change. The image's browser builds are
+  numbered per Playwright release; drift makes pip install a Playwright that
+  looks for a `/ms-playwright` directory the image does not have.
+- **`.venv/` must stay in `.dockerignore` and masked in `docker-compose.yml`.**
+  A macOS `.venv/bin/python` is a Mach-O binary, but `[ -x .venv/bin/python ]`
+  in `perf/run_perf.sh` is still true inside a Linux container, so the perf run
+  would pick it and die.
 
 Front-end performance guardrails are marked `perf`; skip them with
 `pytest -m "not perf"` when iterating. The linearity check in
