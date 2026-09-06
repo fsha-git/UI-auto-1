@@ -32,3 +32,6 @@ jmeter.log
 # OS
 .DS_Store
 my_*.md
+
+# Docker 本机配置（从 .env.example 复制而来）
+.env

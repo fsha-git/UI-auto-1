@@ -11,12 +11,35 @@
 
 ## 快速开始
 
+### 用 Docker 跑（macOS / Linux / Windows 通用）
+
+宿主机只需要 Docker，不用装 Python、Playwright、浏览器、JDK 或 JMeter。命令在三个
+平台上逐字相同：
+
+```bash
+docker compose run --rm all
+```
+
+一次跑完 pytest 全量套件 → 变异检测回归 → 约定审计 → JMeter 压测。只想跑 pytest：
+
+```bash
+docker compose run --rm tests
+```
+
+报告仍然落在宿主机的 `reports/` 与 `test-results/`。分服务命令、传参写法、Linux 的
+文件属主处理、以及已知取舍见 [`DOCKER.md`](DOCKER.md)。
+
+### 装在本机跑
+
 ```bash
 git clone <本仓库地址> && cd UI_auto_1   # 已有本地副本可直接 cd 进仓库根目录
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium
 ```
+
+`requirements.txt` 锁死了直接依赖的版本，其中 `playwright==1.62.0` 必须与
+`docker/Dockerfile` 的基础镜像 tag 一致（原因见 [`DOCKER.md`](DOCKER.md)）。
 
 跑一次全量测试确认环境搭好了：
 
@@ -50,6 +73,10 @@ pytest
 | `scripts/js_coverage.py` | 基于 CDP 的 V8 精确覆盖率采集器，生成前端内联 JS 的染色报告 |
 | `perf/` | JMeter 七类测试计划（负载/压力/阶梯/尖峰/长稳/并发/个人资料只读）、回归门禁、跨运行趋势看板 |
 | `reports/` | 各类测试报告输出目录（已 gitignore，见下文） |
+| `docker/Dockerfile` | 两个 build target：`test`（Python + Chromium）与 `perf`（在它之上再加 JDK 21 + JMeter） |
+| `docker/entrypoint.sh` | 容器内的任务分发器：`pytest` / `triage` / `audit` / `perf` / `all` |
+| `docker-compose.yml` | 四个 service（`tests` / `triage` / `perf` / `all`），三平台通用的一键入口 |
+| `.github/workflows/tests.yml` | CI：跑与本地逐字相同的 compose 命令，上传报告 artifact |
 
 ## 运行测试
 
@@ -186,6 +213,7 @@ pytest --demo-html web/bugs/bug_add_dedupes_items.html \
 
 | 文档 | 内容 |
 |---|---|
+| [`DOCKER.md`](DOCKER.md) | 容器化测试环境：四个 service、传参、报告落点、Linux 文件属主、CI、镜像版本约束 |
 | [`AGENTS.md`](AGENTS.md) | 面向改动者的强制规范：定位器、断言、变异测试不可回归、压测账号隔离、文档同步等七条约定，以及提交前必须跑的验证清单 |
 | [`LOCATORS.md`](LOCATORS.md) | 定位器优先级策略详解，及其与文案目录的关系 |
 | [`COVERAGE.md`](COVERAGE.md) | API 测试清单、Python 覆盖率与前端 JS 染色两条流水线的原理 |

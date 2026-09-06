@@ -1,0 +1,122 @@
+# CI 跑的是与本地逐字相同的 compose 命令，这样两边不会分叉：任何在 CI 上复现的
+# 失败，本机换成同一条命令就能重现。见 DOCKER.md。
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # 每周一 03:17 UTC 跑一次，顺带把压测基线喂给 reports/jmeter/history.jsonl。
+    - cron: "17 3 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # triage 要跑 30 个变异体 × 一次嵌套 pytest（每次都冷启动浏览器），慢。
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Linux 上必须把 runner 自己的 UID/GID 传给容器，否则 reports/ 与
+      # test-results/ 里全是 root 属主的文件，后面的 upload-artifact 读不了。
+      # 取实际值而不是写死 1001：runner 镜像换了用户也不会静默走偏。
+      - name: Export runner UID/GID for the containers
+        run: |
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # 不缓存的话每次都要重新拉 1.4GB 的 Playwright 基础镜像并重装依赖。
+      # load: true 把镜像放进本地 daemon，下面的 compose run 就直接复用，
+      # 不会再自己 build 一遍。
+      - name: Build test image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: test
+          tags: ui-auto-1:test
+          load: true
+          cache-from: type=gha,scope=test
+          cache-to: type=gha,scope=test,mode=max
+
+      - name: pytest
+        run: docker compose run --rm tests
+
+      # if: always() 是为了拿到完整的失败清单，与本地 `all` 任务不 fail fast 的
+      # 取舍一致；任一步失败，job 仍然是红的。
+      - name: triage（变异检测不变量，AGENTS.md §1）
+        if: always()
+        run: docker compose run --rm triage
+
+      - name: audit（约定审计）
+        if: always()
+        run: docker compose run --rm tests audit
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            reports/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # 压测不挂在每次 push 上：一轮 all 是 6 个场景 × 60s，且阈值
+  # （--max-p95 800 / --min-throughput 50）是在开发机上定的，还没有 GitHub
+  # runner 上的基线。先设 continue-on-error 收集几轮数据，确认阈值对 runner
+  # 合理之后再把它改成阻塞的。
+  perf:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Export runner UID/GID for the containers
+        run: |
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build perf image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: perf
+          tags: ui-auto-1:perf
+          load: true
+          cache-from: type=gha,scope=perf
+          cache-to: type=gha,scope=perf,mode=max
+
+      # 缩短时长跑冒烟级别的两个场景。首次运行没有 history.jsonl，
+      # check_jtl.py 的基线回归比较会自动跳过（--min-baseline-runs 3），
+      # 只校验固定阈值。
+      - name: JMeter performance
+        run: docker compose run --rm perf performance -Jduration=30 -Jrampup=5
+
+      - name: JMeter profile
+        run: docker compose run --rm perf profile -Jduration=30 -Jrampup=5
+
+      - name: Upload perf reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-reports
+          path: reports/jmeter/
+          if-no-files-found: warn
+          retention-days: 30
