@@ -293,9 +293,9 @@ run, reporting a "+100% p95 regression" for 1 ms → 2 ms:
 - Both of those are known-good *gaps*, not known-good *diffs*. The increment gate
   (COVERAGE.md 六) only looks at lines a PR changes, so they cost nothing while
   they sit still — but a PR that edits either one is a PR whose changed lines are
-  0% stained, and it will need the `coverage-waiver` approval to merge. That is
-  the intended behaviour: touching deliberately untested code is exactly the
-  decision a human should sign off on.
+  0% stained, and turning `coverage-gate` green then takes the `coverage-waiver`
+  label plus a written reason. That is the intended behaviour: touching
+  deliberately untested code is exactly the decision a human should sign off on.
 - Absolute perf numbers do not extrapolate: the load generator shares a machine
   with the service over loopback, and `ThreadingHTTPServer` is itself the
   bottleneck. This suite's value is **relative** — trends, concurrency
@@ -314,7 +314,7 @@ in a follow-up:
 |---|---|
 | pages, page objects, test files, perf scenarios, or how anything is run | `README.md` (项目结构 table, 运行测试 commands, the intro's feature list) |
 | any locator in `pages/` (added, removed, or moved between tiers) | `LOCATORS.md` — **recount the tier table from the code** (`grep get_by_role / get_by_test_id / locator(` over `pages/`), don't adjust it incrementally; extend the documented-traps list if the new locator carries a caveat |
-| `server/app.py` endpoints, either coverage pipeline (`scripts/js_coverage.py`, the `js_coverage` fixture, `pytest.ini`'s `--cov*` flags, `.coveragerc`), or the diff-coverage gate (`entrypoint.sh`'s `coverage` task, its `diff-cover` flags, the `coverage-waiver` / `coverage-gate` jobs) | `COVERAGE.md` — endpoint table, pipeline description, 第六节's gate 口径 and waiver flow, and refresh the 快照 section's date/numbers when they materially change |
+| `server/app.py` endpoints, either coverage pipeline (`scripts/js_coverage.py`, the `js_coverage` fixture, `pytest.ini`'s `--cov*` flags, `.coveragerc`), or the diff-coverage gate (`entrypoint.sh`'s `coverage` task, its `diff-cover` flags, the `coverage-comment` / `coverage-gate` jobs and the label-waiver rule) | `COVERAGE.md` — endpoint table, pipeline description, 第六节's gate 口径 and waiver flow, and refresh the 快照 section's date/numbers when they materially change |
 | anything under `perf/` | `PERFORMANCE.md` — scenario table, 设计意图 bullet for a new scenario, thresholds |
 | `tests/test_dashboard.py` | `MOCK_TESTS.md` — it enumerates that file's scenarios one by one |
 | `web/studio.html`, `web/studio/steps.js`, `studio/`, `pages/studio_*.py`, or the BDD step definitions | `STUDIO.md` — step-library table, architecture, security boundary; a new step also updates the mapping table in `MOCK_TESTS.md` if it covers a technique listed there |

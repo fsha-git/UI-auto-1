@@ -183,19 +183,47 @@ JS 侧那份 Cobertura 是把第三节的逐字符位图折算成逐行的：一
 
 ### 达不到 100% 怎么办
 
-首选当然是补测试。确实补不了（刻意保留的死代码、上面那种 V8 假红），就走人工审批：
+首选当然是补测试。确实补不了（刻意保留的死代码、上面那种 V8 假红），就显式豁免——
+两件事都要做，缺一样 `coverage-gate` 就是红的：
 
-1. `coverage-gate` 这个检查停在 pending，PR 合不了；
-2. Actions 页面上 `coverage-waiver` job 停在 Waiting，等 `coverage-waiver`
-   environment 的 reviewer 点 Approve（审批留言里写清豁免理由）；
-3. 批准后 `coverage-gate` 转绿，run 的 summary 里写明"本次合并使用了覆盖率豁免"，
-   审批记录留在这次 run 上。
+1. 给 PR 打上 **`coverage-waiver`** 标签；
+2. 在 **PR 描述或任意一条评论**里写一行理由：
 
-`coverage-gate` 是分支保护里唯一要求的那个检查。`test` 只回答"测试过了吗"，
-"能不能合"的判定单独放在 `coverage-gate`，豁免才有地方插进来。
+   ```
+   豁免理由: server/__main__.py 只在 JMeter 压测下运行，pytest 永远走不到
+   ```
 
-> 仓库设置里要先建好 `coverage-waiver` environment 并填上 required reviewers，
-> 再把 `coverage-gate` 加进 `main` 的必需检查。没配之前门禁照跑，但拦不住合并。
+   中英文冒号都认，也可以写成 `coverage-waiver: <理由>`；理由至少 10 个字，
+   `豁免理由: 无` 这种挡得住。
+
+3. 回到那次 run 点 **Re-run failed jobs**——只会重跑 `coverage-gate` 这一个 job，
+   几秒钟。（标签是在 run 跑完之后加的，判定要重新读一次才看得到。）
+
+转绿之后 run 的 summary 里会写明"本次合并使用了覆盖率豁免"、是谁写的理由、理由
+原文和出处；`core.warning` 也会把它挂在 Actions 页面顶部。绕过这件事必须显式发生，
+并且留下名字和理由。
+
+`test` 只回答"测试过了吗"，"能不能合"的判定单独放在 `coverage-gate`，豁免才有地方
+插进来。
+
+### 这个门禁能保证什么、不能保证什么
+
+**不能**：拦住合并。这个仓库是 Free 套餐的**私有**仓库，branch protection、rulesets、
+以及私有仓库的 environment 保护规则都不开放——这三个 API 一律返回
+`Upgrade to GitHub Pro or make this repository public`。没有必需状态检查，红叉在技术
+上挡不住 Merge 按钮。
+
+原本的设计是把豁免挂在受保护的 environment 上等 required reviewers 审批。在这个套餐
+下那是个**假门**：没有保护规则的 environment 不拦任何人，job 直接通过，门禁会给出
+一个"已通过人工审批"的绿色——比没有门禁更糟。所以改成了上面的标签 + 理由。
+
+**能**：不达标时它是红的，而把它变绿必须是一个显式的、留了名字和理由的动作，不会在
+无人注意时悄悄发生。标签能被作者自己打——在没有任何强制层的前提下，这是能做到的
+上限：约束的是"绕过必须被看见"，不是"绕过不可能"。
+
+要真正做到"100% 是 merge 的前提"，只有两条路：把仓库改成 **public**，或者升级到
+**GitHub Pro**。任一之后，在 Settings → Branches 把 `coverage-gate` 加进必需状态检查
+即可，工作流本身不用改。
 
 ### 顺带堵住的一个旧坑
 

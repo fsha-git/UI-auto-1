@@ -258,58 +258,98 @@ jobs:
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
 
-  # 覆盖率豁免。只有门禁没过时才触发，并且挂在受保护的 coverage-waiver
-  # environment 上：job 会停在 Waiting，直到指定的 reviewer 在 Actions 页面点
-  # Approve。"无法满足 100% 时需要人工确认"就是这一下点击，且留有审计记录。
+  # 覆盖率豁免与最终判定。
   #
-  # !! 需要先在仓库 Settings → Environments 建好 coverage-waiver 并填上
-  #    required reviewers。没配之前这个 job 会直接通过，门禁等于不存在。!!
-  coverage-waiver:
-    needs: test
-    if: needs.test.outputs.diff_cov_passed == 'false'
-    runs-on: ubuntu-latest
-    environment: coverage-waiver
-    steps:
-      - name: 记录豁免
-        run: |
-          {
-            echo "## 覆盖率豁免已获批准"
-            echo
-            echo "- PR: #${{ github.event.pull_request.number }}"
-            echo "- commit: \`${{ github.event.pull_request.head.sha }}\`"
-            echo "- 批准人与留言：见本次 run 的审批记录"
-            echo
-            echo "增量代码染色未达 100%，本次合并靠人工审批放行。"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # 分支保护里要求的那个检查就是它。把"测试过了吗"和"可以合并吗"分成两件事：
-  # test 只回答前者，合并的判定集中在这里，豁免才有地方插进来。waiver 等待
-  # 审批期间这个 job 一直是 pending，PR 上的必需检查就是黄的，合不了。
+  # 原本的设计是把豁免挂在受保护的 GitHub Environment 上等 required reviewers 审批，
+  # 但这个仓库是 Free 套餐的私有仓库：branch protection、rulesets、以及私有仓库的
+  # environment 保护规则都不开放（这三个 API 一律返回
+  # "Upgrade to GitHub Pro or make this repository public"）。一个没有保护规则的
+  # environment 不拦任何人——job 直接通过，门禁会给出一个"已通过人工审批"的假绿，
+  # 比没有门禁更糟。所以豁免改成仓库内能自己实现的形式。
+  #
+  # 要诚实地说清这里的边界：没有 branch protection，**红叉在技术上拦不住合并**。
+  # 这个 job 能保证的是：不达标时它是红的，而把它变绿必须是一个显式的、留了名字和
+  # 理由的动作，不会在无人注意时悄悄发生。要真正做到"100% 是 merge 的前提"，得把
+  # 仓库改成 public 或升级到 GitHub Pro，再把 coverage-gate 加进必需检查。
   coverage-gate:
-    needs: [test, coverage-waiver]
+    needs: test
     if: always()
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
     steps:
       - name: 判定
-        run: |
-          # 带连字符的 job id 只能用方括号取，needs.coverage-waiver 会被当成减法。
-          test_result='${{ needs.test.result }}'
-          passed='${{ needs.test.outputs.diff_cov_passed }}'
-          waiver='${{ needs['coverage-waiver'].result }}'
-          echo "test=$test_result  diff_cov_passed=$passed  waiver=$waiver"
+        uses: actions/github-script@v7
+        env:
+          # 走 env 而不是把 ${{ }} 直接插进脚本里：值来自其它 job 的输出，
+          # 插值会把它变成代码的一部分。
+          TEST_RESULT: ${{ needs.test.result }}
+          DIFF_COV_PASSED: ${{ needs.test.outputs.diff_cov_passed }}
+        with:
+          script: |
+            const LABEL = 'coverage-waiver';
+            // 中英文冒号都认；理由至少 10 个非空字符，挡住"豁免理由: 无"这种。
+            const REASON_RE = /^[ \t]*(?:豁免理由|coverage-waiver)[:：][ \t]*(\S.*)$/m;
+            const MIN_REASON = 10;
 
-          if [ "$test_result" != "success" ]; then
-            echo "::error::test job 未通过，不对增量染色做判定。"
-            exit 1
-          fi
-          if [ "$passed" = "true" ]; then
-            echo "增量代码染色达标（或本次改动不涉及染色范围）。" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          if [ "$waiver" = "success" ]; then
-            echo "⚠️ **本次合并使用了覆盖率豁免**：增量代码染色未达 100%，由人工审批放行。" \
-              >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          echo "::error::增量代码染色未达 100%，且豁免未获批准（coverage-waiver: $waiver）。"
-          exit 1
+            const testResult = process.env.TEST_RESULT;
+            const passed = process.env.DIFF_COV_PASSED;
+
+            if (testResult !== 'success') {
+              core.setFailed(`test job 是 ${testResult}，不对增量染色做判定——先修测试。`);
+              return;
+            }
+            if (passed === 'true') {
+              await core.summary
+                .addRaw('增量代码染色达标（或本次改动不涉及染色范围）。').write();
+              return;
+            }
+            if (context.eventName !== 'pull_request') {
+              core.setFailed('增量代码染色未达 100%。');
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const pr = (await github.rest.pulls.get({ owner, repo, pull_number: issue_number })).data;
+            const hasLabel = (pr.labels || []).some((l) => l.name === LABEL);
+
+            // 理由写在 PR 描述里或任意一条评论里都算，取最后一条。
+            const candidates = [{ who: pr.user.login, where: 'PR 描述', body: pr.body || '' }];
+            for (const c of await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number,
+            })) {
+              candidates.push({ who: c.user.login, where: `评论 ${c.html_url}`, body: c.body || '' });
+            }
+            let reason = null;
+            for (const c of candidates) {
+              const m = REASON_RE.exec(c.body);
+              if (m && m[1].trim().length >= MIN_REASON) {
+                reason = { ...c, text: m[1].trim() };
+              }
+            }
+
+            if (!hasLabel || !reason) {
+              const missing = [];
+              if (!hasLabel) missing.push(`给这个 PR 打上 \`${LABEL}\` 标签`);
+              if (!reason) {
+                missing.push(
+                  '在 PR 描述或任意一条评论里写一行 `豁免理由: <为什么这些行覆盖不了>`' +
+                  `（理由至少 ${MIN_REASON} 个字）`);
+              }
+              core.setFailed(
+                '增量代码染色未达 100%，需要显式的人工豁免。还差：' +
+                missing.map((m, i) => `\n  ${i + 1}. ${m}`).join('') +
+                '\n补齐之后回到本次 run 点 "Re-run failed jobs"——只会重跑这一个 job，几秒钟。');
+              return;
+            }
+
+            await core.summary
+              .addHeading('本次合并使用了覆盖率豁免', 2)
+              .addRaw(`增量代码染色未达 100%，由 **@${reason.who}** 显式豁免。\n\n`)
+              .addRaw(`- 理由：${reason.text}\n`)
+              .addRaw(`- 出处：${reason.where}\n`)
+              .write();
+            core.warning(`覆盖率豁免（@${reason.who}）：${reason.text}`);

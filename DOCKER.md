@@ -140,11 +140,11 @@ printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" > .env
 - `coverage-comment` job：把染色报告发成 PR 上的一条 sticky 评论。单独成 job 只为
   最小权限——`pull-requests: write` 是 job 级的，留在 `test` 里就会连 push 和定时
   运行也一起授出去。它不参与合并判定。
-- `coverage-waiver` job：只在门禁没过时触发，挂在受保护的 `coverage-waiver`
-  environment 上等人工审批。
-- `coverage-gate` job：分支保护里要求的那个检查。把"测试过了吗"和"能不能合"分开，
-  豁免才有地方插进来；waiver 待审批期间它是 pending，PR 合不了。详见
-  [`COVERAGE.md`](COVERAGE.md) 第六节。
+- `coverage-gate` job：最终判定。把"测试过了吗"和"能不能合"分开，豁免才有地方插
+  进来。不达标时判红，除非 PR 上打了 `coverage-waiver` 标签**且**写了豁免理由。
+  注意这个仓库是 Free 套餐的私有仓库，没有 branch protection，红叉在技术上拦不住
+  合并——它保证的是"绕过必须显式发生并留痕"。详见 [`COVERAGE.md`](COVERAGE.md)
+  第六节。
 - `perf` job：只在手动触发（workflow_dispatch）和每周定时跑，且目前是
   `continue-on-error: true` —— 见下面的取舍第 4 条。
 
