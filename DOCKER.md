@@ -136,7 +136,10 @@ printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" > .env
 就能重现。
 
 - `test` job：每次 push / PR 跑 pytest + triage + audit，产物上传成 `reports` artifact。
-  PR 上还多跑一步 `tests coverage`（增量代码染色门禁），并把报告发成 PR 评论。
+  PR 上还多跑一步 `tests coverage`（增量代码染色门禁）。它的 token 是只读的。
+- `coverage-comment` job：把染色报告发成 PR 上的一条 sticky 评论。单独成 job 只为
+  最小权限——`pull-requests: write` 是 job 级的，留在 `test` 里就会连 push 和定时
+  运行也一起授出去。它不参与合并判定。
 - `coverage-waiver` job：只在门禁没过时触发，挂在受保护的 `coverage-waiver`
   environment 上等人工审批。
 - `coverage-gate` job：分支保护里要求的那个检查。把"测试过了吗"和"能不能合"分开，

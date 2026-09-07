@@ -21,10 +21,11 @@ jobs:
     # triage 要跑 30 个变异体 × 一次嵌套 pytest（每次都冷启动浏览器），慢。
     timeout-minutes: 60
 
+    # 只读。发 PR 评论需要 pull-requests: write，但权限是 job 级的，写在这里就等于
+    # 给 push / schedule / workflow_dispatch 的每一次运行都发了这张牌。评论那一步
+    # 因此单独拆成下面的 coverage-comment job。
     permissions:
       contents: read
-      # 增量染色报告要发成 PR 评论。
-      pull-requests: write
 
     outputs:
       # 非 PR 事件下门禁步骤整个跳过，输出为空字符串，这里回落成 'true'：
@@ -129,29 +130,17 @@ jobs:
           } > reports/diff-cover/comment.md
           cat reports/diff-cover/comment.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: 发布/更新 PR 评论
+      # 评论正文交给 coverage-comment job 去发（它才有 pull-requests: write）。
+      # 单独传这一个文件，而不是让那个 job 去下整包 reports —— 那里面还有 trace
+      # 和视频，为了两段 Markdown 拉几百兆没道理。
+      - name: Upload the diff-coverage comment body
         if: always() && github.event_name == 'pull_request'
-        # fork 发来的 PR 拿到的 GITHUB_TOKEN 是只读的，评论发不出去；那不该把
-        # 门禁本身拖红——数字在 job summary 里一样看得到。
-        continue-on-error: true
-        uses: actions/github-script@v7
+        uses: actions/upload-artifact@v4
         with:
-          script: |
-            const fs = require('fs');
-            const marker = '<!-- diff-coverage-report -->';
-            const body = fs.readFileSync('reports/diff-cover/comment.md', 'utf8');
-            const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
-            // 认标记更新同一条评论，而不是每次 push 都追加一条。
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner, repo, issue_number,
-            });
-            const existing = comments.find((c) => c.body && c.body.includes(marker));
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number, body });
-            }
+          name: diff-coverage-comment
+          path: reports/diff-cover/comment.md
+          if-no-files-found: ignore
+          retention-days: 7
 
       # if: always() 是为了拿到完整的失败清单，与本地 `all` 任务不 fail fast 的
       # 取舍一致；任一步失败，job 仍然是红的。
@@ -222,6 +211,52 @@ jobs:
           path: reports/jmeter/
           if-no-files-found: warn
           retention-days: 30
+
+  # 把增量染色报告发成 PR 上的一条 sticky 评论。单独成 job 只为一件事：
+  # pull-requests: write 是 job 级权限，留在 test 里就会连 push / schedule 的运行
+  # 一起授出去。它不参与合并判定，coverage-gate 不 needs 它。
+  coverage-comment:
+    needs: test
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v4
+        # test job 挂得足够早时这个产物根本不存在，那时没什么可发的。
+        continue-on-error: true
+        with:
+          name: diff-coverage-comment
+          path: comment
+
+      - name: 发布/更新 PR 评论
+        # fork 发来的 PR 拿到的 GITHUB_TOKEN 是只读的，评论发不出去；那不该把任何
+        # 检查拖红——数字在 test 的 job summary 里一样看得到。
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'comment/comment.md';
+            if (!fs.existsSync(path)) {
+              core.info('没有可发布的报告，跳过。');
+              return;
+            }
+            const marker = '<!-- diff-coverage-report -->';
+            const body = fs.readFileSync(path, 'utf8');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            // 认标记更新同一条评论，而不是每次 push 都追加一条。
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
 
   # 覆盖率豁免。只有门禁没过时才触发，并且挂在受保护的 coverage-waiver
   # environment 上：job 会停在 Waiting，直到指定的 reviewer 在 Actions 页面点
