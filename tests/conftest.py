@@ -17,6 +17,10 @@ from server.app import DEMO_PASSWORD, DEMO_USERNAME, DemoApiHandler
 
 AUTH_STATE_PATH = PROJECT_ROOT / ".auth" / "state.json"
 JS_COVERAGE_REPORT_DIR = PROJECT_ROOT / "reports" / "coverage-js"
+#: Machine-readable twin of the HTML report, read by the diff-coverage gate
+#: (`docker compose run --rm tests coverage`). See COVERAGE.md 六.
+JS_COVERAGE_XML_PATH = JS_COVERAGE_REPORT_DIR / "coverage.xml"
+BUGS_DIR = WEB_DIR / "bugs"
 
 
 @pytest.fixture(scope="session")
@@ -157,12 +161,25 @@ def api_request_context(playwright: Playwright, demo_server: str):
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="session")
-def js_coverage_collector(demo_server: str):
+def js_coverage_collector(demo_server: str, request: pytest.FixtureRequest):
     collector = JsCoverageCollector(server_url=demo_server, web_dir=WEB_DIR)
     yield collector
+
+    # scripts/triage.py runs this suite once per mutant page, and each of those
+    # sessions only ever touches that one mutant's scripts. Letting them write
+    # would leave the *last mutant's* report on disk in place of the real
+    # suite's — which is what the diff-coverage gate then reads. Same trap the
+    # --no-cov in triage.py closes on the Python side; see COVERAGE.md 六.
+    demo_html = Path(request.config.getoption("--demo-html")).resolve()
+    if demo_html.parent == BUGS_DIR.resolve():
+        return
+
     report_path = collector.write_report(JS_COVERAGE_REPORT_DIR)
     if report_path is not None:
         print(f"\nJS coverage report: {report_path}")
+    xml_path = collector.write_cobertura(JS_COVERAGE_XML_PATH)
+    if xml_path is not None:
+        print(f"JS coverage XML:    {xml_path}")
 
 
 @pytest.fixture(autouse=True)

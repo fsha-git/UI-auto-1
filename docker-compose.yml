@@ -1,8 +1,9 @@
 # 三平台通用的一键测试入口。四个 service 的命令在 macOS / Linux / Windows 上逐字相同。
 #   docker compose run --rm tests     全量 pytest
 #   docker compose run --rm triage    变异检测回归（比对 TRIAGE.md）
+#   docker compose run --rm tests coverage   增量代码染色门禁（改动行 100%）
 #   docker compose run --rm perf      JMeter 压测
-#   docker compose run --rm all       上面全部 + 约定审计，一次跑完
+#   docker compose run --rm all       上面全部 + 约定审计，一次跑完（不含 coverage）
 # 详见 DOCKER.md。
 
 # 只放真正共享的字段。build: 不在这里——每个 service 的 target 都不同，都要写
@@ -26,6 +27,9 @@ x-common: &common
   init: true
   environment:
     - PYTEST_ARGS
+    # coverage 任务比对的 base 分支，默认 origin/main。CI 上填 PR 的 base：
+    #   COVERAGE_BASE=origin/main docker compose run --rm tests coverage
+    - COVERAGE_BASE
     - PERF_PORT
     - PERF_ACCOUNTS
     - PERF_HISTORY

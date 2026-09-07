@@ -70,13 +70,14 @@ pytest
 | `tests/test_dashboard_bdd.py` | pytest-bdd 步骤定义：Studio 编排出的场景的唯一执行实现，每一步都走 `DashboardPage` |
 | `tests/features/` | 已提交的 Gherkin 场景，也是 Studio"保存为 feature"的落点；日常 `pytest` 会跑到 |
 | `scripts/triage.py` | 对 `web/bugs/bug_*.html` 逐一跑对应的测试文件（经典变异体跑 `test_demo.py`，`bug_win_*` 跑 `test_windows.py`，`bug_chart_*` 跑 `test_chart.py`，`bug_studio_*` 跑 `test_studio.py`），统计每个缺陷被哪些测试捕获 |
-| `scripts/js_coverage.py` | 基于 CDP 的 V8 精确覆盖率采集器，生成前端内联 JS 的染色报告 |
+| `scripts/js_coverage.py` | 基于 CDP 的 V8 精确覆盖率采集器，生成前端内联 JS 的染色报告（HTML + 给门禁读的 Cobertura XML） |
 | `perf/` | JMeter 七类测试计划（负载/压力/阶梯/尖峰/长稳/并发/个人资料只读）、回归门禁、跨运行趋势看板 |
 | `reports/` | 各类测试报告输出目录（已 gitignore，见下文） |
 | `docker/Dockerfile` | 两个 build target：`test`（Python + Chromium）与 `perf`（在它之上再加 JDK 21 + JMeter） |
-| `docker/entrypoint.sh` | 容器内的任务分发器：`pytest` / `triage` / `audit` / `perf` / `all` |
+| `docker/entrypoint.sh` | 容器内的任务分发器：`pytest` / `triage` / `audit` / `coverage` / `perf` / `all` |
 | `docker-compose.yml` | 四个 service（`tests` / `triage` / `perf` / `all`），三平台通用的一键入口 |
-| `.github/workflows/tests.yml` | CI：跑与本地逐字相同的 compose 命令，上传报告 artifact |
+| `.github/workflows/tests.yml` | CI：跑与本地逐字相同的 compose 命令，上传报告 artifact；PR 上多一道增量代码染色门禁（`coverage-gate`），见 [`COVERAGE.md`](COVERAGE.md) 第六节 |
+| `.coveragerc` | coverage.py 只有一条配置 `relative_files`，让覆盖报告里的路径相对仓库根——门禁在宿主机和容器里判出的结果才一致 |
 
 ## 运行测试
 
@@ -100,6 +101,17 @@ pytest tests/test_i18n.py           # 中英文两个 locale 的全量交互回�
 pytest tests/test_studio.py         # 低代码 Studio 页面（runner 接口用 page.route() mock 掉）
 pytest tests/test_studio_backend.py # Studio 后端：步骤库 / Gherkin 渲染 / 校验 / HTTP 接口
 pytest tests/test_dashboard_bdd.py  # tests/features/ 下的 Gherkin 场景
+```
+
+PR 的增量代码染色门禁（改动行 100% 覆盖，未达标要人工审批才能合并，
+详见 [`COVERAGE.md`](COVERAGE.md) 第六节）：
+
+```bash
+docker compose run --rm tests            # 先跑测试，产出两份覆盖报告
+docker compose run --rm tests coverage   # 再判改动行的覆盖率
+
+# 不用 Docker 的等价写法（只判 Python 侧）：
+diff-cover reports/coverage-py/coverage.xml --compare-branch origin/main --fail-under 100
 ```
 
 启动低代码可视化测试页面（详见 [`STUDIO.md`](STUDIO.md)）：
@@ -134,6 +146,7 @@ playwright codegen http://localhost:8000/demo.html         # 录制生成测试�
 |---|---|---|
 | Python 覆盖率（`server/` + `pages/`） | `reports/coverage-py/index.html` | 默认开启，见 `pytest.ini` 的 `addopts` |
 | 前端 JS 染色（`web/*.html` 内联脚本） | `reports/coverage-js/index.html` | 每次 `pytest` 自动采集，详见 [`COVERAGE.md`](COVERAGE.md) |
+| 上面两份的机器可读版（Cobertura） | `reports/coverage-py/coverage.xml`、`reports/coverage-js/coverage.xml` | 增量染色门禁读它们算改动行的覆盖率 |
 
 **需要显式加参数 / 单独运行脚本才会产出**：
 
@@ -141,6 +154,7 @@ playwright codegen http://localhost:8000/demo.html         # 录制生成测试�
 |---|---|---|
 | HTML 测试报告（含失败截图） | `reports/report.html` | `pytest --html=reports/report.html --self-contained-html` |
 | 变异测试报告 | [`TRIAGE.md`](TRIAGE.md)（仓库根目录，不在 `reports/` 下） | `python scripts/triage.py --write TRIAGE.md` |
+| 增量染色门禁报告 | `reports/diff-cover/python.html`、`js.html` | `docker compose run --rm tests coverage` |
 | 性能测试趋势看板 | `reports/jmeter/perf_dashboard.html` | 单独跑 `perf/run_perf.sh`（JMeter 场景，不随 `pytest` 触发）结束时自动生成，详见 [`PERFORMANCE.md`](PERFORMANCE.md) |
 
 生成带截图的完整 HTML 报告：

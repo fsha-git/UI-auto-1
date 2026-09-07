@@ -9,8 +9,10 @@ folded into per-script character bitmaps:
     2 = executed at least once       -> stained green
 
 Bitmaps are merged (max) across all tests in the session, and at session end
-an HTML report is written with each script's source colored line by line,
-plus per-file and overall coverage percentages.
+two reports are written: an HTML one with each script's source colored line by
+line plus per-file and overall percentages, and a Cobertura XML one that folds
+the character bitmaps down to lines so `diff-cover` can measure the *changed*
+lines of a pull request against it (see COVERAGE.md 六).
 
 Inline scripts are identified by (page path, startLine, startColumn) from
 Debugger.scriptParsed, which lets us slice the exact script text back out of
@@ -18,8 +20,10 @@ the HTML file on disk. V8 coverage offsets are relative to that script text.
 """
 
 import html as html_module
+import time
 from pathlib import Path
 from urllib.parse import urlparse
+from xml.etree import ElementTree as ET
 
 SEEN = 1
 EXECUTED = 2
@@ -172,6 +176,82 @@ class JsCoverageCollector:
         out_path.write_text(self._render_report())
         return out_path
 
+    def write_cobertura(self, out_path: Path) -> Path | None:
+        """Write a Cobertura XML report of the same data, for diff-cover.
+
+        Character-level coverage has to be folded down to lines because that is
+        the only granularity a diff speaks. The fold is deliberately lenient: a
+        line counts as executed if *any* of its stained characters ran. V8
+        hands out block-level ranges, so a single line routinely mixes red and
+        green (`if (a) return b;` with a never-taken branch is red for half its
+        width); requiring every character would paint ordinary code red.
+
+        One *relative* <source> and repo-relative filenames, on purpose, for two
+        reasons. Relative, because an absolute path would be the machine that
+        generated the report — and the gate may well run somewhere else (report
+        written on the host, judged inside the container, or the reverse). When
+        diff-cover cannot resolve a path it reports "no lines with coverage
+        information" and exits 0, so a wrong path here fails *open*. And a
+        single root, because diff-cover also indexes class nodes by their bare
+        filename, so several source roots let same-named files collide. (The
+        Python side does have that shape — see COVERAGE.md 六's 已知限制.)
+        """
+        if not self.scripts:
+            return None
+
+        # rel_path -> {1-based line in the HTML file: state}, merged across
+        # every inline <script> in that file (they are separate ScriptRecords).
+        per_file: dict[str, dict[int, int]] = {}
+        for record in self.scripts.values():
+            target = per_file.setdefault(record.rel_path, {})
+            for line_no, state in _line_states(record).items():
+                target[line_no] = max(target.get(line_no, 0), state)
+
+        covered = sum(1 for lines in per_file.values() for st in lines.values() if st == EXECUTED)
+        valid = sum(len(lines) for lines in per_file.values())
+
+        root = ET.Element("coverage", {
+            "line-rate": f"{covered / valid if valid else 1.0:.4f}",
+            "branch-rate": "0",
+            "lines-covered": str(covered),
+            "lines-valid": str(valid),
+            "branches-covered": "0",
+            "branches-valid": "0",
+            "complexity": "0",
+            "version": "js_coverage",
+            "timestamp": str(int(time.time() * 1000)),
+        })
+        # web_dir.parent is the repo root (WEB_DIR = PROJECT_ROOT / "web"), used
+        # only to make filenames repo-relative; the <source> written out is "."
+        # so the report does not carry this machine's paths.
+        source_root = self.web_dir.parent
+        ET.SubElement(ET.SubElement(root, "sources"), "source").text = "."
+        packages = ET.SubElement(root, "packages")
+
+        for rel_path, lines in sorted(per_file.items()):
+            filename = (self.web_dir / rel_path).relative_to(source_root).as_posix()
+            file_covered = sum(1 for st in lines.values() if st == EXECUTED)
+            rate = f"{file_covered / len(lines) if lines else 1.0:.4f}"
+            package = ET.SubElement(packages, "package", {
+                "name": filename.rsplit("/", 1)[0].replace("/", "."),
+                "line-rate": rate, "branch-rate": "0", "complexity": "0",
+            })
+            klass = ET.SubElement(ET.SubElement(package, "classes"), "class", {
+                "name": filename.rsplit("/", 1)[-1], "filename": filename,
+                "line-rate": rate, "branch-rate": "0", "complexity": "0",
+            })
+            ET.SubElement(klass, "methods")
+            line_elements = ET.SubElement(klass, "lines")
+            for line_no, state in sorted(lines.items()):
+                ET.SubElement(line_elements, "line", {
+                    "number": str(line_no),
+                    "hits": "1" if state == EXECUTED else "0",
+                })
+
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        ET.ElementTree(root).write(out_path, encoding="utf-8", xml_declaration=True)
+        return out_path
+
     def _render_report(self) -> str:
         records = sorted(self.scripts.values(), key=lambda r: (r.rel_path, r.start_line))
         total_executed = sum(r.stats()[0] for r in records)
@@ -271,6 +351,26 @@ merged across all UI tests in this pytest session.</p>
             run_chars.append(ch)
         flush()
         return "".join(out)
+
+
+def _line_states(record: ScriptRecord) -> dict[int, int]:
+    """Fold one record's character bitmap into {1-based HTML line: state}.
+
+    Only characters V8 actually reported (state != 0) and non-whitespace ones
+    count, matching ScriptRecord.stats(); a line with nothing but whitespace,
+    comments or unreported text is left out of the report entirely rather than
+    being counted as an uncovered line.
+    """
+    lines: dict[int, int] = {}
+    line_no = record.start_line + 1  # start_line is 0-based in the HTML file
+    for ch, st in zip(record.source, record.state):
+        if ch == "\n":
+            line_no += 1
+            continue
+        if st == 0 or ch.isspace():
+            continue
+        lines[line_no] = max(lines.get(line_no, 0), st)
+    return lines
 
 
 def _percent(executed: int, executable: int) -> float:

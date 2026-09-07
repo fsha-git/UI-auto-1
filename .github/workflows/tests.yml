@@ -21,8 +21,30 @@ jobs:
     # triage 要跑 30 个变异体 × 一次嵌套 pytest（每次都冷启动浏览器），慢。
     timeout-minutes: 60
 
+    # 只读。发 PR 评论需要 pull-requests: write，但权限是 job 级的，写在这里就等于
+    # 给 push / schedule / workflow_dispatch 的每一次运行都发了这张牌。评论那一步
+    # 因此单独拆成下面的 coverage-comment job。
+    permissions:
+      contents: read
+
+    outputs:
+      # 非 PR 事件下门禁步骤整个跳过，输出为空字符串，这里回落成 'true'：
+      # push 和定时任务没有"相对谁的增量"，不该被门禁挡住。
+      diff_cov_passed: ${{ steps.diffcov.outputs.passed || 'true' }}
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 增量门禁要对 base 分支求 merge-base，浅克隆算不出来。
+          fetch-depth: 0
+
+      # PR 事件 checkout 出来的是那个临时合并提交，base 分支的远端引用不保证
+      # 在本地存在；diff-cover 的 --compare-branch 需要它。
+      - name: Fetch the PR base branch
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags origin \
+            "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
 
       # Linux 上必须把 runner 自己的 UID/GID 传给容器，否则 reports/ 与
       # test-results/ 里全是 root 属主的文件，后面的 upload-artifact 读不了。
@@ -50,6 +72,75 @@ jobs:
 
       - name: pytest
         run: docker compose run --rm tests
+
+      # 放在 triage 之前是防御性的：triage 会派生 30 次嵌套 pytest，它们靠
+      # scripts/triage.py 里的 --no-cov 才不会把覆盖报告冲掉。万一那道保险哪天
+      # 失效，门禁读到的至少还是本次全量运行留下的报告。
+      - name: 增量代码染色门禁（改动行 100%）
+        id: diffcov
+        if: github.event_name == 'pull_request'
+        env:
+          COVERAGE_BASE: origin/${{ github.base_ref }}
+        # 刻意吞掉退出码，而不是用 continue-on-error：这样连"镜像跑不起来"这类
+        # 异常也会落到 passed=false，结果是走人工审批而不是静默放行——失败的方向
+        # 是安全的那一侧。真正的判定在下面的 coverage-gate job 里。
+        run: |
+          if docker compose run --rm tests coverage; then
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 汇总增量染色报告
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          mkdir -p reports/diff-cover
+          {
+            echo "<!-- diff-coverage-report -->"
+            echo "## 增量代码染色（改动行覆盖率）"
+            echo
+            # 三态：空字符串意味着门禁那一步压根没跑（前面的 pytest 挂了），
+            # 那不该说成"覆盖率不达标"。
+            case "${{ steps.diffcov.outputs.passed }}" in
+              true)
+                echo "✅ **Python（\`server/\` + \`pages/\`）达标。**" ;;
+              false)
+                echo "❌ **Python（\`server/\` + \`pages/\`）未达 100%。** 合并需要"
+                echo "\`coverage-waiver\` 环境的人工审批，见 COVERAGE.md 第六节。" ;;
+              *)
+                echo "⚪ **门禁未运行**——前面的步骤失败了，先修测试。" ;;
+            esac
+            echo
+            if [ -s reports/diff-cover/python.md ]; then
+              cat reports/diff-cover/python.md
+            else
+              echo "_本次改动没有触及染色范围内的 Python 文件。_"
+            fi
+            echo
+            echo "### 前端内联 JS（\`web/*.html\`）"
+            echo
+            echo "_只报告、不阻塞：CDP 会话在新页面开始加载之后才附着，部分实际执行过的"
+            echo "顶层语句会被染成红色，见 COVERAGE.md 第三节。_"
+            echo
+            if [ -s reports/diff-cover/js.md ]; then
+              cat reports/diff-cover/js.md
+            else
+              echo "_本次改动没有触及 \`web/\` 下的内联脚本。_"
+            fi
+          } > reports/diff-cover/comment.md
+          cat reports/diff-cover/comment.md >> "$GITHUB_STEP_SUMMARY"
+
+      # 评论正文交给 coverage-comment job 去发（它才有 pull-requests: write）。
+      # 单独传这一个文件，而不是让那个 job 去下整包 reports —— 那里面还有 trace
+      # 和视频，为了两段 Markdown 拉几百兆没道理。
+      - name: Upload the diff-coverage comment body
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: diff-coverage-comment
+          path: reports/diff-cover/comment.md
+          if-no-files-found: ignore
+          retention-days: 7
 
       # if: always() 是为了拿到完整的失败清单，与本地 `all` 任务不 fail fast 的
       # 取舍一致；任一步失败，job 仍然是红的。
@@ -120,3 +211,145 @@ jobs:
           path: reports/jmeter/
           if-no-files-found: warn
           retention-days: 30
+
+  # 把增量染色报告发成 PR 上的一条 sticky 评论。单独成 job 只为一件事：
+  # pull-requests: write 是 job 级权限，留在 test 里就会连 push / schedule 的运行
+  # 一起授出去。它不参与合并判定，coverage-gate 不 needs 它。
+  coverage-comment:
+    needs: test
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v4
+        # test job 挂得足够早时这个产物根本不存在，那时没什么可发的。
+        continue-on-error: true
+        with:
+          name: diff-coverage-comment
+          path: comment
+
+      - name: 发布/更新 PR 评论
+        # fork 发来的 PR 拿到的 GITHUB_TOKEN 是只读的，评论发不出去；那不该把任何
+        # 检查拖红——数字在 test 的 job summary 里一样看得到。
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'comment/comment.md';
+            if (!fs.existsSync(path)) {
+              core.info('没有可发布的报告，跳过。');
+              return;
+            }
+            const marker = '<!-- diff-coverage-report -->';
+            const body = fs.readFileSync(path, 'utf8');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            // 认标记更新同一条评论，而不是每次 push 都追加一条。
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+  # 覆盖率豁免与最终判定。
+  #
+  # 原本的设计是把豁免挂在受保护的 GitHub Environment 上等 required reviewers 审批，
+  # 但这个仓库是 Free 套餐的私有仓库：branch protection、rulesets、以及私有仓库的
+  # environment 保护规则都不开放（这三个 API 一律返回
+  # "Upgrade to GitHub Pro or make this repository public"）。一个没有保护规则的
+  # environment 不拦任何人——job 直接通过，门禁会给出一个"已通过人工审批"的假绿，
+  # 比没有门禁更糟。所以豁免改成仓库内能自己实现的形式。
+  #
+  # 要诚实地说清这里的边界：没有 branch protection，**红叉在技术上拦不住合并**。
+  # 这个 job 能保证的是：不达标时它是红的，而把它变绿必须是一个显式的、留了名字和
+  # 理由的动作，不会在无人注意时悄悄发生。要真正做到"100% 是 merge 的前提"，得把
+  # 仓库改成 public 或升级到 GitHub Pro，再把 coverage-gate 加进必需检查。
+  coverage-gate:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - name: 判定
+        uses: actions/github-script@v7
+        env:
+          # 走 env 而不是把 ${{ }} 直接插进脚本里：值来自其它 job 的输出，
+          # 插值会把它变成代码的一部分。
+          TEST_RESULT: ${{ needs.test.result }}
+          DIFF_COV_PASSED: ${{ needs.test.outputs.diff_cov_passed }}
+        with:
+          script: |
+            const LABEL = 'coverage-waiver';
+            // 中英文冒号都认；理由至少 10 个非空字符，挡住"豁免理由: 无"这种。
+            const REASON_RE = /^[ \t]*(?:豁免理由|coverage-waiver)[:：][ \t]*(\S.*)$/m;
+            const MIN_REASON = 10;
+
+            const testResult = process.env.TEST_RESULT;
+            const passed = process.env.DIFF_COV_PASSED;
+
+            if (testResult !== 'success') {
+              core.setFailed(`test job 是 ${testResult}，不对增量染色做判定——先修测试。`);
+              return;
+            }
+            if (passed === 'true') {
+              await core.summary
+                .addRaw('增量代码染色达标（或本次改动不涉及染色范围）。').write();
+              return;
+            }
+            if (context.eventName !== 'pull_request') {
+              core.setFailed('增量代码染色未达 100%。');
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const pr = (await github.rest.pulls.get({ owner, repo, pull_number: issue_number })).data;
+            const hasLabel = (pr.labels || []).some((l) => l.name === LABEL);
+
+            // 理由写在 PR 描述里或任意一条评论里都算，取最后一条。
+            const candidates = [{ who: pr.user.login, where: 'PR 描述', body: pr.body || '' }];
+            for (const c of await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number,
+            })) {
+              candidates.push({ who: c.user.login, where: `评论 ${c.html_url}`, body: c.body || '' });
+            }
+            let reason = null;
+            for (const c of candidates) {
+              const m = REASON_RE.exec(c.body);
+              if (m && m[1].trim().length >= MIN_REASON) {
+                reason = { ...c, text: m[1].trim() };
+              }
+            }
+
+            if (!hasLabel || !reason) {
+              const missing = [];
+              if (!hasLabel) missing.push(`给这个 PR 打上 \`${LABEL}\` 标签`);
+              if (!reason) {
+                missing.push(
+                  '在 PR 描述或任意一条评论里写一行 `豁免理由: <为什么这些行覆盖不了>`' +
+                  `（理由至少 ${MIN_REASON} 个字）`);
+              }
+              core.setFailed(
+                '增量代码染色未达 100%，需要显式的人工豁免。还差：' +
+                missing.map((m, i) => `\n  ${i + 1}. ${m}`).join('') +
+                '\n补齐之后回到本次 run 点 "Re-run failed jobs"——只会重跑这一个 job，几秒钟。');
+              return;
+            }
+
+            await core.summary
+              .addHeading('本次合并使用了覆盖率豁免', 2)
+              .addRaw(`增量代码染色未达 100%，由 **@${reason.who}** 显式豁免。\n\n`)
+              .addRaw(`- 理由：${reason.text}\n`)
+              .addRaw(`- 出处：${reason.where}\n`)
+              .write();
+            core.warning(`覆盖率豁免（@${reason.who}）：${reason.text}`);
