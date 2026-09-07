@@ -290,6 +290,12 @@ run, reporting a "+100% p95 regression" for 1 ms → 2 ms:
   under pytest. Expected.
 - `server/app.py` has one uncovered line, `fake_function`. It is an intentional
   demo of an uncovered branch (commit `51fe60f`). Leave it.
+- Both of those are known-good *gaps*, not known-good *diffs*. The increment gate
+  (COVERAGE.md 六) only looks at lines a PR changes, so they cost nothing while
+  they sit still — but a PR that edits either one is a PR whose changed lines are
+  0% stained, and it will need the `coverage-waiver` approval to merge. That is
+  the intended behaviour: touching deliberately untested code is exactly the
+  decision a human should sign off on.
 - Absolute perf numbers do not extrapolate: the load generator shares a machine
   with the service over loopback, and `ThreadingHTTPServer` is itself the
   bottleneck. This suite's value is **relative** — trends, concurrency
@@ -308,7 +314,7 @@ in a follow-up:
 |---|---|
 | pages, page objects, test files, perf scenarios, or how anything is run | `README.md` (项目结构 table, 运行测试 commands, the intro's feature list) |
 | any locator in `pages/` (added, removed, or moved between tiers) | `LOCATORS.md` — **recount the tier table from the code** (`grep get_by_role / get_by_test_id / locator(` over `pages/`), don't adjust it incrementally; extend the documented-traps list if the new locator carries a caveat |
-| `server/app.py` endpoints, or either coverage pipeline (`scripts/js_coverage.py`, the `js_coverage` fixture, `pytest-cov` config) | `COVERAGE.md` — endpoint table, pipeline description, and refresh the 快照 section's date/numbers when they materially change |
+| `server/app.py` endpoints, either coverage pipeline (`scripts/js_coverage.py`, the `js_coverage` fixture, `pytest.ini`'s `--cov*` flags, `.coveragerc`), or the diff-coverage gate (`entrypoint.sh`'s `coverage` task, its `diff-cover` flags, the `coverage-waiver` / `coverage-gate` jobs) | `COVERAGE.md` — endpoint table, pipeline description, 第六节's gate 口径 and waiver flow, and refresh the 快照 section's date/numbers when they materially change |
 | anything under `perf/` | `PERFORMANCE.md` — scenario table, 设计意图 bullet for a new scenario, thresholds |
 | `tests/test_dashboard.py` | `MOCK_TESTS.md` — it enumerates that file's scenarios one by one |
 | `web/studio.html`, `web/studio/steps.js`, `studio/`, `pages/studio_*.py`, or the BDD step definitions | `STUDIO.md` — step-library table, architecture, security boundary; a new step also updates the mapping table in `MOCK_TESTS.md` if it covers a technique listed there |
@@ -328,7 +334,7 @@ say when the numbers were measured.
 
 ## Verification
 
-Run all five before reporting completion. The triage diff is not optional.
+Run all six before reporting completion. The triage diff is not optional.
 
 ```bash
 # 1. Full suite — expect zero reruns, not just zero failures
@@ -353,6 +359,11 @@ perf/run_perf.sh performance -Jduration=15 -Jrampup=3
 # 5. Doc sync (§7) — for each area you touched, confirm its paired doc changed
 #    in this same change; if a doc states counts, recount them from the code.
 git diff --stat        # code files with no matching doc row from §7? go back.
+
+# 6. Only if you touched server/ or pages/ — the same increment gate CI runs on
+#    the PR. Every line you changed there must be stained; see COVERAGE.md 六.
+.venv/bin/diff-cover reports/coverage-py/coverage.xml \
+    --compare-branch origin/main --fail-under 100
 ```
 
 ### The containerized equivalent
@@ -364,8 +375,13 @@ Python, browser, JDK or JMeter — see [`DOCKER.md`](DOCKER.md):
 docker compose run --rm all      # steps 1, 2, 3 and 4 in one go
 docker compose run --rm tests    # step 1 only
 docker compose run --rm triage   # step 2 only
-docker compose run --rm tests audit   # step 3 only
+docker compose run --rm tests audit      # step 3 only
+docker compose run --rm tests coverage   # step 6 only (needs step 1 to have run)
 ```
+
+`coverage` is deliberately outside `all`: an *increment* needs a base branch to be
+an increment of (`$COVERAGE_BASE`, default `origin/main`), which is the pull
+request's context, not a local full self-check's.
 
 `.github/workflows/tests.yml` runs those same commands verbatim, so a CI
 failure reproduces locally with one line. The container is a convenience, not a

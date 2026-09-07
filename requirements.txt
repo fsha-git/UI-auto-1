@@ -14,3 +14,8 @@ pytest-rerunfailures==16.6
 pytest-timeout==2.4.0
 pytest-html==4.2.0
 pytest-cov==7.1.0
+
+# 增量覆盖门禁（`docker compose run --rm tests coverage`）：拿 pytest-cov 与
+# scripts/js_coverage.py 产出的 Cobertura XML，对着 git diff 算改动行的覆盖率。
+# 见 COVERAGE.md 六。
+diff-cover==10.5.1

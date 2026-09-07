@@ -32,8 +32,20 @@ docker compose run --rm all
 | `docker compose run --rm tests` | 全量 pytest（含 Python 覆盖率与前端 JS 染色报告） | `test` | 几分钟 |
 | `docker compose run --rm triage` | 对 30 个变异体逐一跑对应测试，与 `TRIAGE.md` 比对 | `test` | 十几分钟 |
 | `docker compose run --rm tests audit` | `AGENTS.md` 的四条约定 grep | `test` | 秒级 |
+| `docker compose run --rm tests coverage` | 增量代码染色门禁：改动行 100% 覆盖 | `test` | 秒级 |
 | `docker compose run --rm perf` | JMeter 六类压测（`soak` 默认不含在内） | `perf` | 十几分钟 |
-| `docker compose run --rm all` | 上面四项全部 | `perf` | 半小时起 |
+| `docker compose run --rm all` | 上面四项全部（**不含 `coverage`**） | `perf` | 半小时起 |
+
+`coverage` 读的是上一次 `tests` 留下的覆盖报告，自己不跑测试；它也不在 `all` 里，
+因为"增量"要有一个 base 分支才成立（`$COVERAGE_BASE`，默认 `origin/main`），那是 PR
+的语境，而 `all` 是本机的全量自检。典型用法是两条连着跑：
+
+```bash
+docker compose run --rm tests
+COVERAGE_BASE=origin/main docker compose run --rm tests coverage
+```
+
+口径、豁免流程和 CI 上的判定见 [`COVERAGE.md`](COVERAGE.md) 第六节。
 
 两个镜像：`test`（Python + Chromium，约 1.6 GB）和 `perf`（在它之上再加 JDK 21 +
 JMeter，约 +400 MB）。只跑 pytest 的人不需要拉 `perf`。
@@ -50,8 +62,8 @@ docker compose run --rm tests --demo-html web/bugs/bug_add_dedupes_items.html
 docker compose run --rm perf performance -Jduration=15 -Jrampup=3
 ```
 
-也可以显式点名任务（`pytest` / `triage` / `audit` / `perf` / `all`），或者拿一个真
-实命令当逃生口：
+也可以显式点名任务（`pytest` / `triage` / `audit` / `coverage` / `perf` / `all`），
+或者拿一个真实命令当逃生口：
 
 ```bash
 docker compose run --rm tests audit
@@ -82,8 +94,9 @@ PYTEST_ARGS='tests/test_d*.py' docker compose run --rm tests   # 原样传给 py
 | 产物 | 路径 |
 |---|---|
 | trace / 失败截图 / 视频 | `test-results/<用例目录>/` |
-| Python 覆盖率 | `reports/coverage-py/index.html` |
-| 前端 JS 染色 | `reports/coverage-js/index.html` |
+| Python 覆盖率 | `reports/coverage-py/index.html`（+ 给门禁读的 `coverage.xml`） |
+| 前端 JS 染色 | `reports/coverage-js/index.html`（+ 给门禁读的 `coverage.xml`） |
+| 增量染色门禁 | `reports/diff-cover/python.html`、`js.html`（各带一份 `.md`） |
 | JMeter 各场景 dashboard | `reports/jmeter/<类型>/dashboard/index.html` |
 | JMeter 跨运行趋势 | `reports/jmeter/perf_dashboard.html` |
 
@@ -123,8 +136,17 @@ printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" > .env
 就能重现。
 
 - `test` job：每次 push / PR 跑 pytest + triage + audit，产物上传成 `reports` artifact。
+  PR 上还多跑一步 `tests coverage`（增量代码染色门禁），并把报告发成 PR 评论。
+- `coverage-waiver` job：只在门禁没过时触发，挂在受保护的 `coverage-waiver`
+  environment 上等人工审批。
+- `coverage-gate` job：分支保护里要求的那个检查。把"测试过了吗"和"能不能合"分开，
+  豁免才有地方插进来；waiver 待审批期间它是 pending，PR 合不了。详见
+  [`COVERAGE.md`](COVERAGE.md) 第六节。
 - `perf` job：只在手动触发（workflow_dispatch）和每周定时跑，且目前是
   `continue-on-error: true` —— 见下面的取舍第 4 条。
+
+门禁那一步要对 base 分支求 merge-base，所以 CI 的 checkout 用 `fetch-depth: 0`，
+并在 PR 事件下显式 fetch 一次 base 分支的远端引用。
 
 镜像用 buildx 的 GitHub Actions 缓存（`type=gha`）；没有它每次都要重拉 1.4 GB 基础
 镜像并重装依赖。

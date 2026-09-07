@@ -1,0 +1,12 @@
+# coverage.py 的配置只有这一条，但没有它增量门禁会**静默失效**。
+#
+# 默认情况下 XML 报告里的 <source> 是绝对路径（`/Users/you/UI_auto_1/server`），
+# 文件名相对它（`app.py`）。diff-cover 靠 source + filename 拼出路径再和 git 的
+# 改动文件比对——于是在宿主机上生成、进容器里判，或者反过来，路径永远对不上，
+# 它会安安静静地报"No lines with coverage information in this diff"然后**退出码
+# 0**。门禁不是判红，是直接放行，这比判错更危险。
+#
+# relative_files 让 <source> 变成相对仓库根的 `server` / `pages`，拼出来就是
+# `server/app.py`，和 git 说的是同一种话，报告在哪生成、在哪判都一样。
+[run]
+relative_files = True

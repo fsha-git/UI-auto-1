@@ -56,6 +56,13 @@ def run_against(html_path: Path) -> dict:
             # runtime and emit extra "rerun" TestReport events that this
             # script would misread as additional failing tests.
             "--reruns", "0",
+            # pytest.ini turns coverage on unconditionally, so without this
+            # every one of these nested runs would rewrite reports/coverage-py/
+            # and .coverage — leaving the *last mutant's* coverage on disk
+            # instead of the real suite's, which the diff-coverage gate reads
+            # (see COVERAGE.md 六). A mutant run's numbers mean nothing anyway,
+            # and skipping the trace hook makes the 30 runs measurably faster.
+            "--no-cov",
             "-q",
         ],
         cwd=ROOT,
