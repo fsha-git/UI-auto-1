@@ -157,15 +157,41 @@ default_task="${DEFAULT_TASK:-pytest}"
 # access(X_OK)。macOS 的 Docker Desktop（virtiofs）实测就是一律放行——容器里
 # `[ -x tests/test_chart.py ]` 对 644 的文件为真，root 和 HOST_UID 指定的普通
 # UID 都一样——而真正 execve 时内核照旧按 mode 拒绝，于是 -x 挡不住任何东西。
-# stat 报的是文件真实的权限位，不受这一层影响，所以自己按位判。顺带要求是普通
-# 文件：目录也满足"有执行位"，但 exec 一个目录没有意义。
+# stat 报的是文件真实的权限位与属主，不受这一层影响，所以自己按 execve 的规则判：
+# 属主命中就只看 owner 位，属组命中就只看 group 位，都不命中才看 other 位——"三类
+# 里有任意一个执行位"是不够的，`chmod 645` 且归自己所有的文件对自己并不可执行，
+# 认成命令照样会 exec 出一句 Permission denied。root 是例外：内核对它放宽成三类里
+# 有任意一个执行位即可，compose 默认也正是以 root 跑。顺带要求是普通文件：目录也
+# 满足"有执行位"，但 exec 一个目录没有意义。
+in_effective_group() {
+    local g
+    for g in $(id -G); do
+        if [ "$g" = "$1" ]; then return 0; fi
+    done
+    return 1
+}
+
 is_executable_command() {
-    local mode
+    local stat_out mode owner group euid bit
     case "$1" in
         */*)
             [ -f "$1" ] || return 1
-            mode="$(stat -c '%a' "$1" 2>/dev/null)" || return 1
-            [ -n "$mode" ] && [ "$(( 8#$mode & 0111 ))" -ne 0 ]
+            # 一次 stat 取齐三个字段，省得多次调用之间读到不一致的状态。
+            stat_out="$(stat -c '%a %u %g' "$1" 2>/dev/null)" || return 1
+            read -r mode owner group <<<"$stat_out"
+            [ -n "$mode" ] || return 1
+
+            euid="$(id -u)"
+            if [ "$euid" -eq 0 ]; then
+                bit=0111
+            elif [ "$owner" -eq "$euid" ]; then
+                bit=0100
+            elif in_effective_group "$group"; then
+                bit=0010
+            else
+                bit=0001
+            fi
+            [ "$(( 8#$mode & bit ))" -ne 0 ]
             ;;
         *)  command -v "$1" >/dev/null 2>&1 ;;
     esac
