@@ -144,6 +144,59 @@ task_all() {
 # DEFAULT_TASK 由镜像给出：test target 是 pytest，perf target 是 perf。
 default_task="${DEFAULT_TASK:-pytest}"
 
+# 首个参数够不够格走逃生口。分两种情形：
+#
+# 不带斜杠的名字交给 command -v 做 PATH 查找 —— PATH 上的目录都在镜像层里，那里
+# 的权限判断是可信的。
+#
+# 带斜杠的路径不能交给它：command -v 对带斜杠的参数只查"文件存在吗"，压根不看
+# 执行位，于是 644 的 `tests/test_chart.py` 也会被认成命令，exec 下去只有一句
+# Permission denied。
+#
+# 改判 [ -x ] 也不行：仓库是绑定挂载进来的，那层文件系统未必如实回答
+# access(X_OK)。macOS 的 Docker Desktop（virtiofs）实测就是一律放行——容器里
+# `[ -x tests/test_chart.py ]` 对 644 的文件为真，root 和 HOST_UID 指定的普通
+# UID 都一样——而真正 execve 时内核照旧按 mode 拒绝，于是 -x 挡不住任何东西。
+# stat 报的是文件真实的权限位与属主，不受这一层影响，所以自己按 execve 的规则判：
+# 属主命中就只看 owner 位，属组命中就只看 group 位，都不命中才看 other 位——"三类
+# 里有任意一个执行位"是不够的，`chmod 645` 且归自己所有的文件对自己并不可执行，
+# 认成命令照样会 exec 出一句 Permission denied。root 是例外：内核对它放宽成三类里
+# 有任意一个执行位即可，compose 默认也正是以 root 跑。顺带要求是普通文件：目录也
+# 满足"有执行位"，但 exec 一个目录没有意义。
+in_effective_group() {
+    local g
+    for g in $(id -G); do
+        if [ "$g" = "$1" ]; then return 0; fi
+    done
+    return 1
+}
+
+is_executable_command() {
+    local stat_out mode owner group euid bit
+    case "$1" in
+        */*)
+            [ -f "$1" ] || return 1
+            # 一次 stat 取齐三个字段，省得多次调用之间读到不一致的状态。
+            stat_out="$(stat -c '%a %u %g' "$1" 2>/dev/null)" || return 1
+            read -r mode owner group <<<"$stat_out"
+            [ -n "$mode" ] || return 1
+
+            euid="$(id -u)"
+            if [ "$euid" -eq 0 ]; then
+                bit=0111
+            elif [ "$owner" -eq "$euid" ]; then
+                bit=0100
+            elif in_effective_group "$group"; then
+                bit=0010
+            else
+                bit=0001
+            fi
+            [ "$(( 8#$mode & bit ))" -ne 0 ]
+            ;;
+        *)  command -v "$1" >/dev/null 2>&1 ;;
+    esac
+}
+
 run_task() {
     local name="$1"; shift
     case "$name" in
@@ -171,7 +224,7 @@ case "$1" in
         run_task "$default_task" "$@"
         ;;
     *)
-        if command -v "$1" >/dev/null 2>&1; then
+        if is_executable_command "$1"; then
             exec "$@"
         else
             # 既不是任务名也不是可执行文件 —— 当成默认任务的参数，
