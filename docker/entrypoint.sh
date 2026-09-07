@@ -144,6 +144,33 @@ task_all() {
 # DEFAULT_TASK 由镜像给出：test target 是 pytest，perf target 是 perf。
 default_task="${DEFAULT_TASK:-pytest}"
 
+# 首个参数够不够格走逃生口。分两种情形：
+#
+# 不带斜杠的名字交给 command -v 做 PATH 查找 —— PATH 上的目录都在镜像层里，那里
+# 的权限判断是可信的。
+#
+# 带斜杠的路径不能交给它：command -v 对带斜杠的参数只查"文件存在吗"，压根不看
+# 执行位，于是 644 的 `tests/test_chart.py` 也会被认成命令，exec 下去只有一句
+# Permission denied。
+#
+# 改判 [ -x ] 也不行：仓库是绑定挂载进来的，那层文件系统未必如实回答
+# access(X_OK)。macOS 的 Docker Desktop（virtiofs）实测就是一律放行——容器里
+# `[ -x tests/test_chart.py ]` 对 644 的文件为真，root 和 HOST_UID 指定的普通
+# UID 都一样——而真正 execve 时内核照旧按 mode 拒绝，于是 -x 挡不住任何东西。
+# stat 报的是文件真实的权限位，不受这一层影响，所以自己按位判。顺带要求是普通
+# 文件：目录也满足"有执行位"，但 exec 一个目录没有意义。
+is_executable_command() {
+    local mode
+    case "$1" in
+        */*)
+            [ -f "$1" ] || return 1
+            mode="$(stat -c '%a' "$1" 2>/dev/null)" || return 1
+            [ -n "$mode" ] && [ "$(( 8#$mode & 0111 ))" -ne 0 ]
+            ;;
+        *)  command -v "$1" >/dev/null 2>&1 ;;
+    esac
+}
+
 run_task() {
     local name="$1"; shift
     case "$name" in
@@ -171,7 +198,7 @@ case "$1" in
         run_task "$default_task" "$@"
         ;;
     *)
-        if command -v "$1" >/dev/null 2>&1; then
+        if is_executable_command "$1"; then
             exec "$@"
         else
             # 既不是任务名也不是可执行文件 —— 当成默认任务的参数，

@@ -58,6 +58,11 @@ docker compose run --rm tests audit
 docker compose run --rm tests bash          # 进容器手动排查
 ```
 
+逃生口认的是**真能执行的东西**：不带斜杠的名字要能在 `PATH` 里查到（`bash`、
+`pytest`），带斜杠的路径要确实带执行位（`perf/run_perf.sh`）。`tests/test_chart.py`
+这类 644 的普通文件不算，它会连同后面的参数一起交给默认任务——这正是上面第一条
+命令能跑起来的原因。
+
 `PYTEST_ARGS` 是给固定参数用的，带引号的参数会保留成一个词：
 
 ```bash
