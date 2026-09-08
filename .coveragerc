@@ -1,5 +1,6 @@
-# coverage.py 的配置只有这一条，但没有它增量门禁会**静默失效**。
+# coverage.py 的配置只有两条，但两条都是「没有它门禁会静默判错」的那种。
 #
+# --- relative_files ------------------------------------------------------
 # 默认情况下 XML 报告里的 <source> 是绝对路径（`/Users/you/UI_auto_1/server`），
 # 文件名相对它（`app.py`）。diff-cover 靠 source + filename 拼出路径再和 git 的
 # 改动文件比对——于是在宿主机上生成、进容器里判，或者反过来，路径永远对不上，
@@ -8,5 +9,28 @@
 #
 # relative_files 让 <source> 变成相对仓库根的 `server` / `pages`，拼出来就是
 # `server/app.py`，和 git 说的是同一种话，报告在哪生成、在哪判都一样。
+#
+# --- concurrency ---------------------------------------------------------
+# Playwright 的**同步** API 不是同步的：每一次 `click()` / `fill()` / `goto()`
+# 都会切到一个 greenlet 上等 asyncio 的结果再切回来。coverage.py 默认的 C 追踪
+# 器按帧维护自己的数据栈，greenlet 切换绕过了它——切回来之后**该函数剩下的行
+# 不再被记录**。症状极具迷惑性：150 个用例全绿，报告却说
+# `login_page.py` 的 `login()` 只执行了第一行，`pages/` 里所有 `return self`
+# 一律未覆盖。测试没问题，是尺子坏了。
+#
+# 这条不写只会在部分环境上翻车，所以更难发现：Python 3.14 起 coverage.py 默认
+# 走 sys.monitoring（不受 greenlet 影响），本机 3.14 量出 pages/ 100%；而容器和
+# CI 是 3.12，走 C 追踪器，同一份代码同一批用例量出 82%~94% 不等。CI 上判的是
+# 改动行 100%（见 COVERAGE.md 六），于是一个只改了 `pages/` 的正常 PR 会被门禁
+# 判红，理由是几行确实执行过的代码——这正是"路径那件事"的镜像：那次是错误地放
+# 行，这次是错误地拦截。
+#
+# `thread` 必须一起写上。concurrency 一旦显式指定就是整个白名单，只写 greenlet
+# 会关掉线程追踪，而 `server/app.py` 是 `demo_server` 夹具在 pytest 进程内用
+# ThreadingHTTPServer 起的——实测它会从 99% 掉到 35%。两个都要。
+#
+# greenlet 本身不用单独装：playwright 的同步 API 就依赖它，requirements.txt 里
+# 有 playwright 就一定有 greenlet。
 [run]
 relative_files = True
+concurrency = greenlet,thread

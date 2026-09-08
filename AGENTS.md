@@ -296,6 +296,18 @@ run, reporting a "+100% p95 regression" for 1 ms → 2 ms:
   0% stained, and turning `coverage-gate` green then takes the `coverage-waiver`
   label plus a written reason. That is the intended behaviour: touching
   deliberately untested code is exactly the decision a human should sign off on.
+- A `pages/` method whose **first line is covered and the rest is red** is a
+  broken ruler, not a missing test. Playwright's sync API switches greenlets on
+  every `click()` / `fill()` / `goto()`, and coverage.py's default C tracer stops
+  recording the rest of the function when it switches back. It only bites where
+  that tracer is in use — Python 3.14 (the usual local venv) defaults to
+  `sys.monitoring` and is immune, while the container and CI run 3.12 and are
+  not, so the suite passes 150/150 and still reports `pages/` at 82–94% there.
+  `concurrency = greenlet,thread` in `.coveragerc` is what holds this shut;
+  `thread` is not optional (dropping it takes `server/app.py` from 99% to 35%,
+  because `demo_server` runs it on a `ThreadingHTTPServer` thread). Do not write
+  tests against these phantom gaps — check that config line first, and verify a
+  coverage change on **both** interpreters. See COVERAGE.md 二 and 六.
 - Absolute perf numbers do not extrapolate: the load generator shares a machine
   with the service over loopback, and `ThreadingHTTPServer` is itself the
   bottleneck. This suite's value is **relative** — trends, concurrency
