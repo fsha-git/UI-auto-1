@@ -77,7 +77,7 @@ pytest
 | `docker/entrypoint.sh` | 容器内的任务分发器：`pytest` / `triage` / `audit` / `coverage` / `perf` / `all` |
 | `docker-compose.yml` | 四个 service（`tests` / `triage` / `perf` / `all`），三平台通用的一键入口 |
 | `.github/workflows/tests.yml` | CI：跑与本地逐字相同的 compose 命令，上传报告 artifact；PR 上多一道增量代码染色门禁（`coverage-gate`），见 [`COVERAGE.md`](COVERAGE.md) 第六节 |
-| `.coveragerc` | coverage.py 只有一条配置 `relative_files`，让覆盖报告里的路径相对仓库根——门禁在宿主机和容器里判出的结果才一致 |
+| `.coveragerc` | coverage.py 的两条配置：`relative_files` 让报告路径相对仓库根，`concurrency = greenlet,thread` 让追踪器跟得上 Playwright 同步 API 的 greenlet 切换——两条都是为了门禁在宿主机和容器里判出同一个结果 |
 
 ## 运行测试
 

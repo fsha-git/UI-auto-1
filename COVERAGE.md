@@ -36,10 +36,17 @@ API 测试覆盖：正常路径、鉴权失败（缺 token / 错 token）、参�
 --cov-report=xml:reports/coverage-py/coverage.xml
 ```
 
-外加 [`.coveragerc`](.coveragerc) 里唯一的一条 `relative_files = True`：它让 XML 报告
-里的路径相对仓库根，而不是写死生成它的那台机器。没有它，在宿主机跑出的报告拿进容器
-里判，路径对不上，diff-cover 会安静地报"没有覆盖信息"并**退出码 0**——门禁不是判红，
-是直接放行。详见第六节。
+外加 [`.coveragerc`](.coveragerc) 里的两条，两条都是「不写就会让门禁静默判错」的：
+
+- `relative_files = True`：让 XML 报告里的路径相对仓库根，而不是写死生成它的那台
+  机器。没有它，在宿主机跑出的报告拿进容器里判，路径对不上，diff-cover 会安静地报
+  "没有覆盖信息"并**退出码 0**——门禁不是判红，是直接放行。详见第六节。
+- `concurrency = greenlet,thread`：Playwright 的**同步** API 每次 `click()` /
+  `fill()` / `goto()` 都会切到 greenlet 上等 asyncio 的结果再切回来。coverage.py
+  默认的 C 追踪器按帧维护数据栈，greenlet 切换绕过了它，**切回来之后该函数剩下的
+  行不再记录**。`thread` 必须一起写：concurrency 一经指定就是整个白名单，只写
+  greenlet 会关掉线程追踪，而 `server/app.py` 是 `demo_server` 夹具在 pytest 进程
+  内用 ThreadingHTTPServer 起的（实测从 99% 掉到 35%）。同样详见第六节。
 
 - coverage.py 通过 Python trace 钩子对 `server/`（后端）和 `pages/`（Page Object）
   的每一行做染色标记，API 测试与 UI 测试共同贡献覆盖。
@@ -105,7 +112,11 @@ API 测试覆盖：正常路径、鉴权失败（缺 token / 错 token）、参�
 .venv/bin/pytest tests/test_api.py
 ```
 
-## 五、当前覆盖率快照（2026-09-07，150 个用例全通过）
+## 五、当前覆盖率快照（2026-09-08，150 个用例全通过）
+
+本次快照在两侧各量了一遍并逐行一致：宿主机 macOS / Python 3.14（`.venv/bin/pytest`）
+与容器 Linux / Python 3.12（`docker compose run --rm tests`）。这个"一致"是
+`concurrency = greenlet,thread` 带来的，不是白拿的——见第二节与第六节"尺子这件事"。
 
 - Python 侧 `server/app.py` 99%、`pages/` 除 `popup_page.py`（95%）外全部
   100%（含新增的 `pages/studio_page.py` 与 `pages/studio_steps.py`）。两处未
@@ -245,6 +256,31 @@ diff-cover 拿 XML 里的 `<source>` + `filename` 拼出路径，再和 `git dif
 `relative_files`，JS 侧的 `write_cobertura()` 直接写 `<source>.</source>`。这样报告在
 宿主机生成、进容器里判（CI 就是这么跑的，反过来也一样）结果都一致。改动这两处时请
 连带验证一次：随便在 `server/` 里改一行不会被执行的代码，容器里跑 `coverage` 必须判红。
+
+### 尺子这件事，错了是"误杀"——而且只在别人的机器上错
+
+上面那条讲的是路径写错会**放行**；它有个镜像：**尺子本身量错会误杀**，并且只在
+部分环境上误杀，所以更难发现。
+
+Playwright 的同步 API 靠 greenlet 实现（每个 `click()` / `fill()` / `goto()` 切出去
+等 asyncio、再切回来）。coverage.py 默认的 C 追踪器按帧维护数据栈，greenlet 切换绕
+过了它——**切回来之后该函数剩下的行不再被记录**。症状极具迷惑性：150 个用例全绿，
+报告却说 `login_page.login()` 只执行了第一行、`pages/` 里的 `return self` 一片未
+覆盖。测试没问题，是尺子坏了。
+
+跨环境的分裂让它更隐蔽：Python 3.14 起 coverage.py 默认走 sys.monitoring，不受
+greenlet 影响，本机（macOS / 3.14）量出 `pages/` 100%；而容器与 CI 是 3.12，走 C
+追踪器，同一份代码、同一批用例量出 `demo_page.py` 84%、`studio_page.py` 82%、总计
+87%。门禁判的是**改动行 100%**，于是一个只改了 `pages/` 的正常 PR 会在 CI 上被判
+红，理由是几行确实执行过的代码——本机复现不了。
+
+修法就是 [`.coveragerc`](.coveragerc) 的 `concurrency = greenlet,thread`（见第二
+节）。加上之后容器里的数字与本机逐行一致（见第五节快照）。
+
+判断依据很好认：如果某个 `pages/` 方法「第一行覆盖、后面全红」，尤其是紧跟在一次
+Playwright 调用之后的那行，那是尺子的问题，不是测试的问题——别去补测试，先看这条
+配置还在不在。核对方式是同一套用例在 3.12 与 3.14 两侧跑出同一份 `term-missing`
+行号，容器与宿主机各跑一次即可。
 
 ### 一个已知限制
 
